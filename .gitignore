@@ -1,0 +1,35 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Logs and temporary files
+*.log
+*.tmp
+tmp/
+temp/
+
+# Nix/direnv local state
+.direnv/
+result
+result-*
+outputs/
+
+# Rust build output
+target/
+
+# Node/Svelte build output and dependencies
+node_modules/
+dist/
+.svelte-kit/
+.vite/
+coverage/
