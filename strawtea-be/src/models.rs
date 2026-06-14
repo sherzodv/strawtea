@@ -76,3 +76,34 @@ pub struct InvestlogAsset {
     pub percent_change: f64,
     pub price_fetched_at: DateTime<Utc>,
 }
+
+#[derive(Debug, Serialize)]
+pub struct InvestlogPerformance {
+    pub tickers: Vec<String>,
+    pub range: String,
+    pub series: Vec<InvestlogPerformanceSeries>,
+    pub events: Vec<InvestlogPerformanceEvent>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct InvestlogPerformanceSeries {
+    pub ticker: String,
+    pub points: Vec<InvestlogPerformancePoint>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct InvestlogPerformancePoint {
+    pub date: NaiveDate,
+    pub close: i64,
+    pub index: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct InvestlogPerformanceEvent {
+    pub ticker: String,
+    pub date: NaiveDate,
+    pub op: String,
+    pub price: i64,
+    pub quantity: i64,
+    pub notes: String,
+}

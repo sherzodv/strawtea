@@ -48,12 +48,20 @@ impl TwelveDataClient {
     }
 
     pub async fn price_history(&self, ticker: &str) -> Result<Vec<PricePoint>, AppError> {
+        self.daily_price_history(ticker, 31).await
+    }
+
+    pub async fn daily_price_history(
+        &self,
+        ticker: &str,
+        outputsize: u16,
+    ) -> Result<Vec<PricePoint>, AppError> {
         let mut url = Url::parse("https://api.twelvedata.com/time_series")
             .map_err(|err| AppError::MarketData(err.to_string()))?;
         url.query_pairs_mut()
             .append_pair("symbol", ticker)
             .append_pair("interval", "1day")
-            .append_pair("outputsize", "31")
+            .append_pair("outputsize", &outputsize.to_string())
             .append_pair("order", "ASC")
             .append_pair("apikey", &self.api_key);
 

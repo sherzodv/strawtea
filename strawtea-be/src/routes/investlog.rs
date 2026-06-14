@@ -1,10 +1,20 @@
-use axum::{Json, Router, extract::State, http::HeaderMap, routing::get};
-use chrono::{DateTime, Utc};
+use axum::{
+    Json, Router,
+    extract::{Query, State},
+    http::HeaderMap,
+    routing::get,
+};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::{
     error::AppError,
-    models::{CreateInvestlogEntry, InvestlogAsset, InvestlogEntry},
+    models::{
+        CreateInvestlogEntry, InvestlogAsset, InvestlogEntry, InvestlogPerformance,
+        InvestlogPerformanceEvent, InvestlogPerformancePoint, InvestlogPerformanceSeries,
+        PricePoint,
+    },
     state::AppState,
 };
 
@@ -12,6 +22,20 @@ pub fn investlog_routes() -> Router<AppState> {
     Router::new()
         .route("/investlog", get(list_entries).post(create_entry))
         .route("/investlog/assets", get(list_assets))
+        .route("/investlog/performance", get(performance))
+}
+
+#[derive(Deserialize)]
+struct PerformanceQuery {
+    ticker: String,
+    range: Option<String>,
+}
+
+#[derive(Clone, Copy)]
+struct PerformanceRange {
+    label: &'static str,
+    days: i64,
+    output_size: u16,
 }
 
 async fn list_entries(
@@ -171,6 +195,78 @@ async fn list_assets(
     Ok(Json(assets))
 }
 
+async fn performance(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<PerformanceQuery>,
+) -> Result<Json<InvestlogPerformance>, AppError> {
+    let user_id = current_user_id(&state, &headers).await?;
+    let tickers = parse_tickers(&query.ticker)?;
+    let requested_range = query.range.unwrap_or_else(|| "1y".to_string());
+    let range = performance_range(&requested_range)?;
+
+    let start_date = Utc::now().date_naive() - Duration::days(range.days);
+    let mut series = Vec::with_capacity(tickers.len());
+
+    for ticker in &tickers {
+        let prices = cached_or_refreshed_daily_prices(&state, ticker, range, start_date).await?;
+        let Some(first_price) = prices.first() else {
+            series.push(InvestlogPerformanceSeries {
+                ticker: ticker.clone(),
+                points: Vec::new(),
+            });
+            continue;
+        };
+
+        let first_close = first_price.close as f64;
+        let points = prices
+            .into_iter()
+            .map(|price| InvestlogPerformancePoint {
+                date: price.date,
+                close: price.close,
+                index: (price.close as f64 / first_close) * 100.0,
+            })
+            .collect();
+
+        series.push(InvestlogPerformanceSeries {
+            ticker: ticker.clone(),
+            points,
+        });
+    }
+
+    let events = sqlx::query_as::<_, PerformanceEventRow>(
+        r#"
+        select
+          ticker,
+          occurred_at::date as date,
+          op::text as op,
+          price,
+          quantity,
+          notes
+        from investlog
+        where user_id = $1
+          and ticker = any($2)
+          and occurred_at::date >= $3
+        order by occurred_at
+        "#,
+    )
+    .bind(user_id)
+    .bind(&tickers)
+    .bind(start_date)
+    .fetch_all(&state.db)
+    .await?
+    .into_iter()
+    .map(Into::into)
+    .collect();
+
+    Ok(Json(InvestlogPerformance {
+        tickers,
+        range: range.label.to_string(),
+        series,
+        events,
+    }))
+}
+
 async fn cached_or_refreshed_price(
     state: &AppState,
     ticker: &str,
@@ -218,6 +314,116 @@ async fn cached_or_refreshed_price(
     .await?;
 
     Ok(row)
+}
+
+async fn cached_or_refreshed_daily_prices(
+    state: &AppState,
+    ticker: &str,
+    range: PerformanceRange,
+    start_date: NaiveDate,
+) -> Result<Vec<DailyPriceRow>, AppError> {
+    let stats = sqlx::query_as::<_, DailyPriceCacheStats>(
+        r#"
+        select
+          count(*)::bigint as count,
+          min(date) as earliest_date,
+          max(date) as latest_date,
+          max(fetched_at) filter (where date >= current_date - 7) as recent_fetched_at
+        from ticker_daily_price_cache
+        where ticker = $1
+          and provider = 'twelvedata'
+          and date >= $2
+        "#,
+    )
+    .bind(ticker)
+    .bind(start_date)
+    .fetch_one(&state.db)
+    .await?;
+
+    let today = Utc::now().date_naive();
+    let earliest_is_late = stats
+        .earliest_date
+        .map(|date| date > start_date + Duration::days(5))
+        .unwrap_or(true);
+    let recent_is_stale = stats
+        .recent_fetched_at
+        .map(|fetched_at| Utc::now() - fetched_at > Duration::minutes(15))
+        .unwrap_or(true);
+    let latest_is_old = stats
+        .latest_date
+        .map(|date| date < today - Duration::days(5))
+        .unwrap_or(true);
+
+    if stats.count == 0 || earliest_is_late || latest_is_old || recent_is_stale {
+        let prices = state
+            .market_data
+            .daily_price_history(ticker, range.output_size)
+            .await?;
+        upsert_daily_prices(state, ticker, prices).await?;
+    }
+
+    sqlx::query_as::<_, DailyPriceRow>(
+        r#"
+        select date, close
+        from ticker_daily_price_cache
+        where ticker = $1
+          and provider = 'twelvedata'
+          and date >= $2
+        order by date
+        "#,
+    )
+    .bind(ticker)
+    .bind(start_date)
+    .fetch_all(&state.db)
+    .await
+    .map_err(Into::into)
+}
+
+async fn upsert_daily_prices(
+    state: &AppState,
+    ticker: &str,
+    prices: Vec<PricePoint>,
+) -> Result<(), AppError> {
+    for price in prices {
+        sqlx::query(
+            r#"
+            insert into ticker_daily_price_cache (
+              ticker,
+              date,
+              open,
+              high,
+              low,
+              close,
+              volume,
+              currency,
+              provider,
+              fetched_at,
+              updated_at
+            )
+            values ($1, $2, $3, $4, $5, $6, $7, 'USD', 'twelvedata', now(), now())
+            on conflict (ticker, date, provider) do update
+            set open = excluded.open,
+                high = excluded.high,
+                low = excluded.low,
+                close = excluded.close,
+                volume = excluded.volume,
+                currency = excluded.currency,
+                fetched_at = excluded.fetched_at,
+                updated_at = now()
+            "#,
+        )
+        .bind(ticker)
+        .bind(price.date)
+        .bind(f64_cents(price.open))
+        .bind(f64_cents(price.high))
+        .bind(f64_cents(price.low))
+        .bind(f64_cents(price.close))
+        .bind(price.volume.map(|volume| volume as i64))
+        .execute(&state.db)
+        .await?;
+    }
+
+    Ok(())
 }
 
 async fn current_user_id(state: &AppState, headers: &HeaderMap) -> Result<Uuid, AppError> {
@@ -309,12 +515,111 @@ struct CachedPrice {
     fetched_at: DateTime<Utc>,
 }
 
+#[derive(sqlx::FromRow)]
+struct DailyPriceRow {
+    date: NaiveDate,
+    close: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct DailyPriceCacheStats {
+    count: i64,
+    earliest_date: Option<NaiveDate>,
+    latest_date: Option<NaiveDate>,
+    recent_fetched_at: Option<DateTime<Utc>>,
+}
+
+#[derive(sqlx::FromRow)]
+struct PerformanceEventRow {
+    ticker: String,
+    date: NaiveDate,
+    op: String,
+    price: i64,
+    quantity: i64,
+    notes: String,
+}
+
 fn rounded_div(numerator: i64, denominator: i64) -> i64 {
     if denominator == 0 {
         return 0;
     }
 
     (numerator + denominator / 2) / denominator
+}
+
+fn f64_cents(value: f64) -> i64 {
+    (value * 100.0).round() as i64
+}
+
+fn performance_range(value: &str) -> Result<PerformanceRange, AppError> {
+    match value {
+        "1m" => Ok(PerformanceRange {
+            label: "1m",
+            days: 31,
+            output_size: 35,
+        }),
+        "3m" => Ok(PerformanceRange {
+            label: "3m",
+            days: 93,
+            output_size: 75,
+        }),
+        "6m" => Ok(PerformanceRange {
+            label: "6m",
+            days: 186,
+            output_size: 140,
+        }),
+        "1y" => Ok(PerformanceRange {
+            label: "1y",
+            days: 365,
+            output_size: 260,
+        }),
+        "3y" => Ok(PerformanceRange {
+            label: "3y",
+            days: 1095,
+            output_size: 780,
+        }),
+        _ => Err(AppError::BadRequest(
+            "range must be one of 1m, 3m, 6m, 1y, 3y".to_string(),
+        )),
+    }
+}
+
+fn parse_tickers(value: &str) -> Result<Vec<String>, AppError> {
+    let mut tickers = Vec::new();
+
+    for ticker in value.split(',') {
+        let ticker = ticker.trim().to_uppercase();
+        if ticker.is_empty() || tickers.contains(&ticker) {
+            continue;
+        }
+
+        tickers.push(ticker);
+    }
+
+    if tickers.is_empty() {
+        return Err(AppError::BadRequest("ticker is required".to_string()));
+    }
+
+    if tickers.len() > 8 {
+        return Err(AppError::BadRequest(
+            "at most 8 tickers can be compared".to_string(),
+        ));
+    }
+
+    Ok(tickers)
+}
+
+impl From<PerformanceEventRow> for InvestlogPerformanceEvent {
+    fn from(row: PerformanceEventRow) -> Self {
+        Self {
+            ticker: row.ticker,
+            date: row.date,
+            op: row.op,
+            price: row.price,
+            quantity: row.quantity,
+            notes: row.notes,
+        }
+    }
 }
 
 impl From<InvestlogRow> for InvestlogEntry {

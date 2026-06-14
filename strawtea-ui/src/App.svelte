@@ -3,7 +3,6 @@
   import { LogOut } from '@lucide/svelte';
   import HomePage from './features/home/HomePage.svelte';
   import InvestlogPage from './features/investlog/InvestlogPage.svelte';
-  import StocksPage from './features/stocks/StocksPage.svelte';
   import LoginPage from './features/auth/LoginPage.svelte';
   import { auth, initAuth, signOut } from './lib/auth';
   import { route, startRouter } from './lib/router';
@@ -39,8 +38,6 @@
       <HomePage />
     {:else if $route.path === '/investlog'}
       <InvestlogPage />
-    {:else if $route.path === '/stocks'}
-      <StocksPage />
     {:else}
       <section class="stea-empty">
         <h1>Not found</h1>

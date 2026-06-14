@@ -3,12 +3,18 @@
   import { onMount } from 'svelte';
   import {
     createInvestlogEntry,
+    fetchInvestlogPerformance,
     listInvestlogAssets,
     listInvestlogEntries,
+    searchTickers,
     type InvestlogAsset,
-    type InvestlogEntry
+    type InvestlogEntry,
+    type InvestlogPerformance,
+    type InvestlogPerformanceRange
   } from '../../lib/api';
   import { route } from '../../lib/router';
+  import PerformanceChart from './PerformanceChart.svelte';
+  import TickerPicker from './TickerPicker.svelte';
 
   let entries: InvestlogEntry[] = [];
   let assets: InvestlogAsset[] = [];
@@ -22,7 +28,12 @@
   let error = '';
   let isSaving = false;
   let isLoading = true;
+  let isLoadingPerformance = false;
   let isModalOpen = false;
+  let selectedAnalysisTickers: string[] = [];
+  let performanceRange: InvestlogPerformanceRange = '1y';
+  let performance: InvestlogPerformance | null = null;
+  let activeTab: 'assets' | 'history' = 'assets';
 
   $: notesLabel = op === 'buy' ? 'Justify why you bought this' : 'Justify why you sold this';
   $: draftPrice = parseDecimal(price);
@@ -39,6 +50,10 @@
 
     try {
       [entries, assets] = await Promise.all([listInvestlogEntries(), listInvestlogAssets()]);
+      if (selectedAnalysisTickers.length === 0 && assets[0]) {
+        selectedAnalysisTickers = [assets[0].ticker];
+      }
+      await loadPerformance();
     } catch (err) {
       error = err instanceof Error ? err.message : 'Could not load journal';
     } finally {
@@ -75,6 +90,10 @@
       const created = await createInvestlogEntry(payload);
       entries = [created, ...entries];
       assets = await listInvestlogAssets();
+      if (selectedAnalysisTickers.length === 0 && assets[0]) {
+        selectedAnalysisTickers = [assets[0].ticker];
+      }
+      await loadPerformance();
       closeModal();
     } catch (err) {
       error = err instanceof Error ? err.message : 'Could not save entry';
@@ -164,6 +183,23 @@
     error = '';
   }
 
+  async function loadPerformance() {
+    if (selectedAnalysisTickers.length === 0) {
+      performance = null;
+      return;
+    }
+
+    isLoadingPerformance = true;
+
+    try {
+      performance = await fetchInvestlogPerformance(selectedAnalysisTickers, performanceRange);
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Could not load performance';
+    } finally {
+      isLoadingPerformance = false;
+    }
+  }
+
   function formatPercent(value: number) {
     return `${value.toLocaleString(undefined, {
       minimumFractionDigits: 2,
@@ -181,6 +217,21 @@
     }
 
     return '';
+  }
+
+  function addAnalysisTicker(ticker: string) {
+    const normalized = ticker.trim().toUpperCase();
+    if (!normalized || selectedAnalysisTickers.includes(normalized)) {
+      return;
+    }
+
+    selectedAnalysisTickers = [...selectedAnalysisTickers, normalized];
+    loadPerformance();
+  }
+
+  function removeAnalysisTicker(ticker: string) {
+    selectedAnalysisTickers = selectedAnalysisTickers.filter((item) => item !== ticker);
+    loadPerformance();
   }
 </script>
 
@@ -291,93 +342,164 @@
     </div>
   {/if}
 
-  <section class="stea-stack" aria-label="Current investment assets">
-    <div class="stea-row">
-      <BookOpen size={20} />
-      <h2 class="stea-heading-sm">Assets</h2>
-    </div>
+  <div class="stea-tabs" role="tablist" aria-label="Investlog views">
+    <button
+      class={activeTab === 'assets' ? 'stea-tab stea-tab-active' : 'stea-tab'}
+      type="button"
+      role="tab"
+      aria-selected={activeTab === 'assets'}
+      on:click={() => (activeTab = 'assets')}
+    >
+      Assets
+    </button>
+    <button
+      class={activeTab === 'history' ? 'stea-tab stea-tab-active' : 'stea-tab'}
+      type="button"
+      role="tab"
+      aria-selected={activeTab === 'history'}
+      on:click={() => (activeTab = 'history')}
+    >
+      History
+    </button>
+  </div>
 
-    {#if isLoading}
-      <p class="stea-muted">Loading assets</p>
-    {:else if assets.length === 0}
-      <p class="stea-muted">No current assets.</p>
-    {:else}
-      <div class="stea-table-wrap">
-        <table class="stea-table">
-          <thead>
-            <tr>
-              <th>Ticker</th>
-              <th>Qty</th>
-              <th>Price</th>
-              <th>Cost</th>
-              <th>Current</th>
-              <th>Price change</th>
-              <th>Change</th>
-              <th>Change %</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each assets as asset}
-              <tr>
-                <td><strong>{asset.ticker}</strong></td>
-                <td>{formatQuantity(asset.quantity)}</td>
-                <td>{formatMoney(asset.avg_buy_price)}</td>
-                <td>{formatMoney(asset.cost)}</td>
-                <td>{formatMoney(asset.current_price)}</td>
-                <td class={changeClass(asset.price_change)}>{formatMoney(asset.price_change)}</td>
-                <td class={changeClass(asset.amount_change)}>{formatMoney(asset.amount_change)}</td>
-                <td class={changeClass(asset.percent_change)}>{formatPercent(asset.percent_change)}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
+  {#if activeTab === 'assets'}
+    <section class="stea-stack" aria-label="Current investment assets">
+      <div class="stea-row">
+        <BookOpen size={20} />
+        <h2 class="stea-heading-sm">Assets</h2>
       </div>
-    {/if}
-  </section>
 
-  <section class="stea-stack" aria-label="Investment journal entries">
-    <div class="stea-row">
-      <BookOpen size={20} />
-      <h2 class="stea-heading-sm">Entries</h2>
-    </div>
+      {#if isLoading}
+        <p class="stea-muted">Loading assets</p>
+      {:else if assets.length === 0}
+        <p class="stea-muted">No current assets.</p>
+      {:else}
+        <div class="stea-table-wrap">
+          <table class="stea-table">
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Qty</th>
+                <th>Price</th>
+                <th>Cost</th>
+                <th>Current</th>
+                <th>Price change</th>
+                <th>Change</th>
+                <th>Change %</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each assets as asset}
+                <tr>
+                  <td><strong>{asset.ticker}</strong></td>
+                  <td>{formatQuantity(asset.quantity)}</td>
+                  <td>{formatMoney(asset.avg_buy_price)}</td>
+                  <td>{formatMoney(asset.cost)}</td>
+                  <td>{formatMoney(asset.current_price)}</td>
+                  <td class={changeClass(asset.price_change)}>{formatMoney(asset.price_change)}</td>
+                  <td class={changeClass(asset.amount_change)}>{formatMoney(asset.amount_change)}</td>
+                  <td class={changeClass(asset.percent_change)}>{formatPercent(asset.percent_change)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+    </section>
 
-    {#if isLoading}
-      <p class="stea-muted">Loading entries</p>
-    {:else if entries.length === 0}
-      <p class="stea-muted">No entries yet.</p>
-    {:else}
-      {#each entries as entry}
-        <article class="stea-panel-grid">
-          <div class="stea-row-between">
-            <strong>{entry.ticker}</strong>
-            <span class={entry.op === 'buy' ? 'stea-badge stea-badge-buy' : 'stea-badge stea-badge-sell'}>{entry.op}</span>
-          </div>
-          <p class="stea-note">{new Date(entry.occurred_at).toLocaleString()}</p>
-          <dl class="stea-stat-grid">
-            <div>
-              <dt>Price</dt>
-              <dd>{formatMoney(entry.price)}</dd>
+    <section class="stea-stack" aria-label="Ticker analysis against benchmark">
+      <div class="stea-row-between">
+        <div class="stea-row">
+          <BookOpen size={20} />
+          <h2 class="stea-heading-sm">Analysis</h2>
+        </div>
+        <div class="stea-toolbar">
+          <label class="stea-field">
+            <span class="stea-field-label">Range</span>
+            <select class="stea-input" bind:value={performanceRange} on:change={loadPerformance}>
+              <option value="1m">1M</option>
+              <option value="3m">3M</option>
+              <option value="6m">6M</option>
+              <option value="1y">1Y</option>
+              <option value="3y">3Y</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <TickerPicker
+        label="Add ticker"
+        selected={selectedAnalysisTickers}
+        assetTickers={assets.map((asset) => asset.ticker)}
+        historyKey="strawtea:analysis-ticker-history"
+        search={searchTickers}
+        onSelect={addAnalysisTicker}
+      />
+
+      {#if selectedAnalysisTickers.length > 0}
+        <div class="stea-chip-row" aria-label="Selected analysis tickers">
+          {#each selectedAnalysisTickers as ticker}
+            <button class="stea-chip stea-chip-active" type="button" on:click={() => removeAnalysisTicker(ticker)}>
+              {ticker} ×
+            </button>
+          {/each}
+        </div>
+      {/if}
+
+      {#if isLoadingPerformance}
+        <p class="stea-muted">Loading performance</p>
+      {:else if performance}
+        <PerformanceChart {performance} assetTickers={assets.map((asset) => asset.ticker)} />
+      {:else}
+        <p class="stea-muted">Add a ticker to start analysis.</p>
+      {/if}
+    </section>
+  {:else}
+    <section class="stea-stack" aria-label="Investment journal history">
+      <div class="stea-row">
+        <BookOpen size={20} />
+        <h2 class="stea-heading-sm">History</h2>
+      </div>
+
+      {#if isLoading}
+        <p class="stea-muted">Loading history</p>
+      {:else if entries.length === 0}
+        <p class="stea-muted">No entries yet.</p>
+      {:else}
+        {#each entries as entry}
+          <article class="stea-panel-grid">
+            <div class="stea-row-between">
+              <strong>{entry.ticker}</strong>
+              <span class={entry.op === 'buy' ? 'stea-badge stea-badge-buy' : 'stea-badge stea-badge-sell'}>{entry.op}</span>
             </div>
-            <div>
-              <dt>Qty</dt>
-              <dd>{formatQuantity(entry.quantity)}</dd>
-            </div>
-            <div>
-              <dt>Fees</dt>
-              <dd>{formatMoney(entry.fees)}</dd>
-            </div>
-            <div>
-              <dt>Gross</dt>
-              <dd>{formatMoney(grossCents(entry))}</dd>
-            </div>
-            <div>
-              <dt>{entry.op === 'buy' ? 'Total cost' : 'Net proceeds'}</dt>
-              <dd>{formatMoney(netCents(entry))}</dd>
-            </div>
-          </dl>
-          <p class="stea-note">{entry.notes}</p>
-        </article>
-      {/each}
-    {/if}
-  </section>
+            <p class="stea-note">{new Date(entry.occurred_at).toLocaleString()}</p>
+            <dl class="stea-stat-grid">
+              <div>
+                <dt>Price</dt>
+                <dd>{formatMoney(entry.price)}</dd>
+              </div>
+              <div>
+                <dt>Qty</dt>
+                <dd>{formatQuantity(entry.quantity)}</dd>
+              </div>
+              <div>
+                <dt>Fees</dt>
+                <dd>{formatMoney(entry.fees)}</dd>
+              </div>
+              <div>
+                <dt>Gross</dt>
+                <dd>{formatMoney(grossCents(entry))}</dd>
+              </div>
+              <div>
+                <dt>{entry.op === 'buy' ? 'Total cost' : 'Net proceeds'}</dt>
+                <dd>{formatMoney(netCents(entry))}</dd>
+              </div>
+            </dl>
+            <p class="stea-note">{entry.notes}</p>
+          </article>
+        {/each}
+      {/if}
+    </section>
+  {/if}
 </section>

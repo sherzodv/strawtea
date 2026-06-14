@@ -53,6 +53,35 @@ export type InvestlogAsset = {
   price_fetched_at: string;
 };
 
+export type InvestlogPerformancePoint = {
+  date: string;
+  close: number;
+  index: number;
+};
+
+export type InvestlogPerformanceSeries = {
+  ticker: string;
+  points: InvestlogPerformancePoint[];
+};
+
+export type InvestlogPerformanceEvent = {
+  ticker: string;
+  date: string;
+  op: 'buy' | 'sell';
+  price: number;
+  quantity: number;
+  notes: string;
+};
+
+export type InvestlogPerformance = {
+  tickers: string[];
+  range: InvestlogPerformanceRange;
+  series: InvestlogPerformanceSeries[];
+  events: InvestlogPerformanceEvent[];
+};
+
+export type InvestlogPerformanceRange = '1m' | '3m' | '6m' | '1y' | '3y';
+
 export type CreateInvestlogEntry = {
   ticker: string;
   occurred_at: string;
@@ -79,6 +108,18 @@ export async function listInvestlogEntries(): Promise<InvestlogEntry[]> {
 
 export async function listInvestlogAssets(): Promise<InvestlogAsset[]> {
   return apiFetch('/api/investlog/assets');
+}
+
+export async function fetchInvestlogPerformance(
+  tickers: string[],
+  range: InvestlogPerformanceRange = '1y'
+): Promise<InvestlogPerformance> {
+  const params = new URLSearchParams({
+    ticker: tickers.join(','),
+    range
+  });
+
+  return apiFetch(`/api/investlog/performance?${params}`);
 }
 
 export async function createInvestlogEntry(

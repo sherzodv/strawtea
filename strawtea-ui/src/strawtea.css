@@ -83,6 +83,27 @@ a {
   gap: 12px;
 }
 
+.stea-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid #ded5c6;
+}
+
+.stea-tab {
+  min-height: 42px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  padding: 0 12px;
+  color: #5f574d;
+  background: transparent;
+  font-weight: 750;
+}
+
+.stea-tab-active {
+  border-bottom-color: #315c4d;
+  color: #25221d;
+}
+
 .stea-heading {
   margin: 0;
 }
@@ -259,6 +280,60 @@ a {
   background: transparent;
 }
 
+.stea-picker {
+  display: grid;
+  gap: 10px;
+}
+
+.stea-picker-body {
+  display: grid;
+  gap: 12px;
+}
+
+.stea-picker-section {
+  display: grid;
+  gap: 8px;
+}
+
+.stea-picker-section-divided {
+  border-top: 1px solid #ece3d7;
+  padding-top: 12px;
+}
+
+.stea-picker-heading {
+  margin: 0;
+  color: #786f63;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.stea-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stea-chip {
+  min-height: 34px;
+  border: 1px solid #ded5c6;
+  border-radius: 8px;
+  padding: 0 10px;
+  color: #25221d;
+  background: #fffdf8;
+  font-weight: 750;
+}
+
+.stea-chip-asset {
+  font-weight: 900;
+}
+
+.stea-chip-active {
+  border-color: #315c4d;
+  color: #fffaf1;
+  background: #315c4d;
+}
+
 .stea-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -272,6 +347,12 @@ a {
 .stea-field {
   display: grid;
   gap: 6px;
+}
+
+.stea-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 10px;
 }
 
 .stea-field-label {
@@ -344,11 +425,66 @@ a {
   background: #fffaf1;
 }
 
+.stea-chart-wrap {
+  position: relative;
+}
+
 .stea-chart {
   width: 100%;
   height: 260px;
   color: #315c4d;
   border-block: 1px solid #ece3d7;
+}
+
+.stea-chart-marker {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  border: 2px solid #fffaf1;
+  border-radius: 999px;
+  box-shadow: 0 1px 4px rgba(37, 34, 29, 0.24);
+  transform: translate(-50%, -50%);
+}
+
+.stea-chart-marker-buy {
+  background: #315c4d;
+}
+
+.stea-chart-marker-sell {
+  background: #8a4b32;
+}
+
+.stea-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: #5f574d;
+  font-size: 0.88rem;
+}
+
+.stea-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stea-legend-strong {
+  font-weight: 900;
+}
+
+.stea-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 3px;
+  border-radius: 999px;
+}
+
+.stea-swatch-primary {
+  background: #315c4d;
+}
+
+.stea-swatch-secondary {
+  background: #786f63;
 }
 
 .stea-meta-row {
@@ -458,6 +594,15 @@ a {
   text-align: center;
 }
 
+.stea-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
 .stea-modal-backdrop {
   position: fixed;
   z-index: 20;
@@ -509,7 +654,8 @@ a {
   }
 
   .stea-row-between,
-  .stea-modal-actions {
+  .stea-modal-actions,
+  .stea-toolbar {
     align-items: stretch;
     flex-direction: column;
   }
