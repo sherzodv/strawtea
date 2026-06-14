@@ -71,6 +71,34 @@ impl TwelveDataClient {
             .map(PriceValue::try_into)
             .collect()
     }
+
+    pub async fn latest_price_cents(&self, ticker: &str) -> Result<i64, AppError> {
+        let mut url = Url::parse("https://api.twelvedata.com/price")
+            .map_err(|err| AppError::MarketData(err.to_string()))?;
+        url.query_pairs_mut()
+            .append_pair("symbol", ticker)
+            .append_pair("apikey", &self.api_key);
+
+        let response = self.client.get(url).send().await?.error_for_status()?;
+        let payload = response.json::<LatestPriceResponse>().await?;
+
+        if let Some(message) = payload.message.or(payload.note) {
+            return Err(AppError::MarketData(message));
+        }
+
+        let price = payload
+            .price
+            .ok_or_else(|| AppError::MarketData("latest price missing".to_string()))?;
+
+        parse_cents(&price)
+    }
+}
+
+#[derive(Deserialize)]
+struct LatestPriceResponse {
+    price: Option<String>,
+    message: Option<String>,
+    note: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -131,4 +159,9 @@ fn parse_u64(value: &str) -> Result<u64, AppError> {
     value
         .parse::<u64>()
         .map_err(|err| AppError::MarketData(err.to_string()))
+}
+
+fn parse_cents(value: &str) -> Result<i64, AppError> {
+    let parsed = parse_f64(value)?;
+    Ok((parsed * 100.0).round() as i64)
 }

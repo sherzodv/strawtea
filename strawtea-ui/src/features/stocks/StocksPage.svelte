@@ -64,36 +64,36 @@
   });
 </script>
 
-<section class="stocks-page">
-  <div class="page-title-row">
-    <button class="icon-button" type="button" aria-label="Back home" on:click={() => route.navigate('/')}>
+<section class="stea-stack">
+  <div class="stea-row">
+    <button class="stea-icon-btn" type="button" aria-label="Back home" on:click={() => route.navigate('/')}>
       <ArrowLeft size={20} />
     </button>
     <div>
-      <p class="eyebrow">Stocks</p>
-      <h1>Market lookup</h1>
+      <p class="stea-eyebrow">Stocks</p>
+      <h1 class="stea-heading">Market lookup</h1>
     </div>
   </div>
 
-  <label class="search-box">
+  <label class="stea-search">
     <Search size={20} />
     <input bind:value={query} type="search" placeholder="Search ticker, e.g. AAPL" />
   </label>
 
   {#if error}
-    <p class="error">{error}</p>
+    <p class="stea-error">{error}</p>
   {/if}
 
   {#if isSearching}
-    <p class="muted">Searching</p>
+    <p class="stea-muted">Searching</p>
   {:else if results.length > 0}
-    <div class="result-list">
+    <div class="stea-list">
       {#each results as result}
-        <button class="result-row" type="button" on:click={() => selectTicker(result)}>
+        <button class="stea-list-row" type="button" on:click={() => selectTicker(result)}>
           <strong>{result.symbol}</strong>
-          <span>{result.name}</span>
+          <span class="stea-list-row-text">{result.name}</span>
           {#if result.exchange}
-            <small>{result.exchange}</small>
+            <small class="stea-list-row-meta">{result.exchange}</small>
           {/if}
         </button>
       {/each}
@@ -101,13 +101,13 @@
   {/if}
 
   {#if selected}
-    <section class="chart-section">
+    <section class="stea-stack">
       <div>
-        <p class="eyebrow">1 month</p>
-        <h2>{selected.symbol}</h2>
+        <p class="stea-eyebrow">1 month</p>
+        <h2 class="stea-heading">{selected.symbol}</h2>
       </div>
       {#if isLoadingPrices}
-        <p class="muted">Loading prices</p>
+        <p class="stea-muted">Loading prices</p>
       {:else if history}
         <StockChart history={history} />
       {/if}

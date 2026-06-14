@@ -1,6 +1,6 @@
 use axum::http::HeaderMap;
 use jsonwebtoken::{
-    Algorithm, DecodingKey, Validation, decode, decode_header,
+    DecodingKey, Validation, decode, decode_header,
     jwk::{AlgorithmParameters, JwkSet},
 };
 use serde::Deserialize;
@@ -47,12 +47,15 @@ impl SupabaseAuth {
         let kid = header.kid.ok_or(AppError::Unauthorized)?;
         let jwk = self.jwks.find(&kid).ok_or(AppError::Unauthorized)?;
 
-        let decoding_key = match &jwk.algorithm {
-            AlgorithmParameters::RSA(_) => DecodingKey::from_jwk(jwk)?,
+        match &jwk.algorithm {
+            AlgorithmParameters::RSA(_) | AlgorithmParameters::EllipticCurve(_) => {}
             _ => return Err(AppError::Unauthorized),
-        };
+        }
 
-        let mut validation = Validation::new(Algorithm::RS256);
+        let algorithm = header.alg;
+        let decoding_key = DecodingKey::from_jwk(jwk)?;
+
+        let mut validation = Validation::new(algorithm);
         validation.set_audience(&[self.audience.as_str()]);
         validation.set_issuer(&[self.issuer.as_str()]);
 

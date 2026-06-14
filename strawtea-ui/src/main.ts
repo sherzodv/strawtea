@@ -1,6 +1,6 @@
 import App from './App.svelte';
 import { mount } from 'svelte';
-import './styles.css';
+import './strawtea.css';
 
 const app = mount(App, {
   target: document.getElementById('app') as HTMLElement

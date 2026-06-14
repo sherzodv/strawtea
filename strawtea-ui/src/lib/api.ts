@@ -1,6 +1,7 @@
 import { accessToken } from './auth';
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8080';
+const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+const apiBaseUrl = configuredApiBaseUrl ?? '';
 
 export type TickerSearchResult = {
   symbol: string;
@@ -24,6 +25,46 @@ export type PriceHistory = {
   prices: PricePoint[];
 };
 
+export type InvestlogEntry = {
+  id: string;
+  ticker: string;
+  occurred_at: string;
+  op: 'buy' | 'sell';
+  broker: 'minvest';
+  currency: 'USD';
+  price: number;
+  quantity: number;
+  fees: number;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InvestlogAsset = {
+  ticker: string;
+  quantity: number;
+  avg_buy_price: number;
+  cost: number;
+  current_price: number;
+  price_change: number;
+  current_value: number;
+  amount_change: number;
+  percent_change: number;
+  price_fetched_at: string;
+};
+
+export type CreateInvestlogEntry = {
+  ticker: string;
+  occurred_at: string;
+  op: 'buy' | 'sell';
+  broker: 'minvest';
+  currency: 'USD';
+  price: number;
+  quantity: number;
+  fees: number;
+  notes: string;
+};
+
 export async function searchTickers(query: string): Promise<TickerSearchResult[]> {
   return apiFetch(`/api/stocks/search?q=${encodeURIComponent(query)}`);
 }
@@ -32,10 +73,30 @@ export async function fetchPriceHistory(ticker: string): Promise<PriceHistory> {
   return apiFetch(`/api/stocks/${encodeURIComponent(ticker)}/prices?range=1mo`);
 }
 
-async function apiFetch<T>(path: string): Promise<T> {
+export async function listInvestlogEntries(): Promise<InvestlogEntry[]> {
+  return apiFetch('/api/investlog');
+}
+
+export async function listInvestlogAssets(): Promise<InvestlogAsset[]> {
+  return apiFetch('/api/investlog/assets');
+}
+
+export async function createInvestlogEntry(
+  entry: CreateInvestlogEntry
+): Promise<InvestlogEntry> {
+  return apiFetch('/api/investlog', {
+    method: 'POST',
+    body: JSON.stringify(entry)
+  });
+}
+
+async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = await accessToken();
   const response = await fetch(`${apiBaseUrl}${path}`, {
+    ...init,
     headers: {
+      'Content-Type': 'application/json',
+      ...init.headers,
       Authorization: `Bearer ${token}`
     }
   });

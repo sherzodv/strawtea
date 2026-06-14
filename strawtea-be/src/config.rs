@@ -14,12 +14,16 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self> {
+        let _ = dotenvy::dotenv();
+
         Ok(Self {
             database_url: required_env("DATABASE_URL")?,
             supabase_jwt_issuer: required_env("SUPABASE_JWT_ISSUER")?,
             supabase_jwt_audience: required_env("SUPABASE_JWT_AUDIENCE")?,
             supabase_jwt_jwks_url: required_env("SUPABASE_JWT_JWKS_URL")?,
-            twelve_data_api_key: required_env("TWELVE_DATA_API_KEY")?,
+            twelve_data_api_key: env::var("STRAWTEA_TWELVE_API_KEY")
+                .or_else(|_| env::var("TWELVE_DATA_API_KEY"))
+                .context("STRAWTEA_TWELVE_API_KEY or TWELVE_DATA_API_KEY must be set")?,
             http_addr: env::var("HTTP_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".to_string()),
         })
     }

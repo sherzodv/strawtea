@@ -20,7 +20,9 @@ use crate::{
     config::Config,
     db::connect_db,
     integrations::market_data::TwelveDataClient,
-    routes::{health::health_routes, me::me_routes, stocks::stock_routes},
+    routes::{
+        health::health_routes, investlog::investlog_routes, me::me_routes, stocks::stock_routes,
+    },
     state::AppState,
 };
 
@@ -52,7 +54,10 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .merge(health_routes())
-        .nest("/api", me_routes().merge(stock_routes()))
+        .nest(
+            "/api",
+            me_routes().merge(stock_routes()).merge(investlog_routes()),
+        )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state);

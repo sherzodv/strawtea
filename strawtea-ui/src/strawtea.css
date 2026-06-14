@@ -1,0 +1,520 @@
+:root {
+  color: #25221d;
+  background: #f7f4ed;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0)),
+    #f7f4ed;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+a {
+  color: inherit;
+}
+
+.stea-shell {
+  width: min(100%, 920px);
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.stea-center {
+  display: grid;
+  place-items: center;
+}
+
+.stea-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.stea-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.stea-stack-lg {
+  display: grid;
+  gap: 22px;
+}
+
+.stea-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.stea-row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stea-heading {
+  margin: 0;
+}
+
+.stea-heading-sm {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.stea-eyebrow {
+  margin: 0 0 4px;
+  color: #786f63;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.stea-text {
+  margin: 0;
+  color: #38322b;
+  font-size: 0.95rem;
+}
+
+.stea-muted {
+  color: #786f63;
+}
+
+.stea-error {
+  margin: 0;
+  color: #9f2d2d;
+}
+
+.stea-gain {
+  color: #315c4d;
+  font-weight: 750;
+}
+
+.stea-loss {
+  color: #9f2d2d;
+  font-weight: 750;
+}
+
+.stea-icon-btn {
+  display: inline-grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid #ded5c6;
+  border-radius: 8px;
+  color: #25221d;
+  background: #fffaf1;
+}
+
+.stea-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-radius: 8px;
+  color: #fffaf1;
+  background: #315c4d;
+  font-weight: 750;
+}
+
+.stea-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 48px;
+  border: 1px solid #ded5c6;
+  border-radius: 8px;
+  padding: 0 16px;
+  color: #25221d;
+  background: #fffaf1;
+  font-weight: 750;
+}
+
+.stea-btn-fit {
+  width: auto;
+  padding-inline: 16px;
+}
+
+.stea-auth-screen {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 20px;
+}
+
+.stea-auth-panel {
+  width: min(100%, 360px);
+  text-align: center;
+}
+
+.stea-auth-panel h1 {
+  margin: 0;
+  font-size: 2.3rem;
+}
+
+.stea-auth-panel p {
+  margin: 12px 0 24px;
+  color: #5f574d;
+  line-height: 1.5;
+}
+
+.stea-brand-mark {
+  display: grid;
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 18px;
+  place-items: center;
+  border-radius: 18px;
+  background: #315c4d;
+  color: #fffaf1;
+  font-size: 2rem;
+  font-weight: 800;
+}
+
+.stea-menu {
+  display: flex;
+  min-height: calc(100vh - 120px);
+  align-items: flex-start;
+}
+
+.stea-menu-grid {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 18px;
+}
+
+.stea-app-tile {
+  display: grid;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 1px solid #ded5c6;
+  border-radius: 8px;
+  background: #fffaf1;
+  color: #25221d;
+  font-weight: 750;
+  box-shadow: 0 18px 40px rgba(49, 92, 77, 0.08);
+}
+
+.stea-app-icon {
+  display: grid;
+  width: 72px;
+  height: 72px;
+  place-items: center;
+  border-radius: 18px;
+  color: #f7f4ed;
+  background: #315c4d;
+}
+
+.stea-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  padding: 0 16px;
+  border: 1px solid #ded5c6;
+  border-radius: 8px;
+  background: #fffaf1;
+}
+
+.stea-search input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+}
+
+.stea-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #ded5c6;
+  border-radius: 8px;
+  background: #fffaf1;
+}
+
+.stea-field {
+  display: grid;
+  gap: 6px;
+}
+
+.stea-field-label {
+  color: #5f574d;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.stea-input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #ded5c6;
+  border-radius: 8px;
+  padding: 10px 12px;
+  outline: 0;
+  background: #fffdf8;
+  color: #25221d;
+}
+
+.stea-textarea {
+  resize: vertical;
+}
+
+.stea-span-all {
+  grid-column: 1 / -1;
+}
+
+.stea-list {
+  display: grid;
+  gap: 10px;
+}
+
+.stea-list-row {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) 1fr auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 54px;
+  padding: 12px 14px;
+  border: 1px solid #ded5c6;
+  border-radius: 8px;
+  background: #fffaf1;
+  text-align: left;
+}
+
+.stea-list-row-text {
+  overflow: hidden;
+  color: #5f574d;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stea-list-row-meta {
+  color: #786f63;
+}
+
+.stea-panel {
+  padding: 16px;
+  border: 1px solid #ded5c6;
+  border-radius: 8px;
+  background: #fffaf1;
+}
+
+.stea-panel-grid {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #ded5c6;
+  border-radius: 8px;
+  background: #fffaf1;
+}
+
+.stea-chart {
+  width: 100%;
+  height: 260px;
+  color: #315c4d;
+  border-block: 1px solid #ece3d7;
+}
+
+.stea-meta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stea-meta-row-sm {
+  color: #786f63;
+  font-size: 0.88rem;
+}
+
+.stea-mb-sm {
+  margin-bottom: 10px;
+}
+
+.stea-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.stea-stat-strip {
+  padding: 12px;
+  border: 1px solid #ece3d7;
+  border-radius: 8px;
+  background: #fffdf8;
+}
+
+.stea-stat-grid dt {
+  color: #786f63;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.stea-stat-grid dd {
+  margin: 2px 0 0;
+  font-weight: 750;
+}
+
+.stea-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #ded5c6;
+  border-radius: 8px;
+  background: #fffaf1;
+}
+
+.stea-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+}
+
+.stea-table th,
+.stea-table td {
+  padding: 12px;
+  border-bottom: 1px solid #ece3d7;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.stea-table th:first-child,
+.stea-table td:first-child {
+  text-align: left;
+}
+
+.stea-table th {
+  color: #786f63;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.stea-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.stea-badge {
+  border-radius: 8px;
+  padding: 4px 8px;
+  color: #fffaf1;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.stea-badge-buy {
+  background: #315c4d;
+}
+
+.stea-badge-sell {
+  background: #8a4b32;
+}
+
+.stea-note {
+  margin: 0;
+  color: #5f574d;
+  line-height: 1.45;
+}
+
+.stea-empty {
+  display: grid;
+  min-height: 50vh;
+  place-items: center;
+  text-align: center;
+}
+
+.stea-modal-backdrop {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(37, 34, 29, 0.48);
+}
+
+.stea-modal {
+  display: grid;
+  width: min(100%, 720px);
+  max-height: min(92vh, 860px);
+  gap: 16px;
+  overflow: auto;
+  border: 1px solid #ded5c6;
+  border-radius: 8px;
+  padding: 16px;
+  background: #fffaf1;
+  box-shadow: 0 24px 80px rgba(37, 34, 29, 0.26);
+}
+
+.stea-modal-header,
+.stea-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stea-modal-actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 560px) {
+  .stea-shell {
+    padding: 16px;
+  }
+
+  .stea-menu-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stea-list-row,
+  .stea-form-grid,
+  .stea-stat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stea-row-between,
+  .stea-modal-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .stea-btn-fit {
+    width: 100%;
+  }
+}

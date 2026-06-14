@@ -3,6 +3,16 @@ import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  server: {
+    proxy: {
+      '/api': 'http://127.0.0.1:8080'
+    }
+  },
+  preview: {
+    proxy: {
+      '/api': 'http://127.0.0.1:8080'
+    }
+  },
   plugins: [
     svelte(),
     VitePWA({
