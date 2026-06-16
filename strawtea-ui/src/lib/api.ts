@@ -1,7 +1,7 @@
 import { accessToken } from './auth';
+import { runtimeEnv } from './runtimeConfig';
 
-const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
-const apiBaseUrl = configuredApiBaseUrl ?? '';
+const apiBaseUrl = runtimeEnv('VITE_API_BASE_URL');
 
 export type TickerSearchResult = {
   symbol: string;

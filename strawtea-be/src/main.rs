@@ -7,12 +7,16 @@ mod models;
 mod routes;
 mod state;
 
-use std::net::SocketAddr;
+use std::{env, net::SocketAddr};
 
 use anyhow::Context;
 use axum::Router;
 use tokio::net::TcpListener;
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tower_http::{
+    cors::CorsLayer,
+    services::{ServeDir, ServeFile},
+    trace::TraceLayer,
+};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
@@ -52,12 +56,17 @@ async fn main() -> anyhow::Result<()> {
         market_data,
     };
 
+    let static_dir = env::var("STATIC_DIR").unwrap_or_else(|_| "public".to_string());
+    let static_files = ServeDir::new(&static_dir)
+        .not_found_service(ServeFile::new(format!("{static_dir}/index.html")));
+
     let app = Router::new()
         .merge(health_routes())
         .nest(
             "/api",
             me_routes().merge(stock_routes()).merge(investlog_routes()),
         )
+        .fallback_service(static_files)
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state);

@@ -17,6 +17,7 @@ Thumbs.db
 *.tmp
 tmp/
 temp/
+sample-data/
 
 # Nix/direnv local state
 .direnv/
@@ -33,3 +34,12 @@ dist/
 .svelte-kit/
 .vite/
 coverage/
+
+# Terraform local state and secrets
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+!.auto.tfvars.example
+!terraform.tfvars.example

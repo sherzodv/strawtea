@@ -1,8 +1,10 @@
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { writable } from 'svelte/store';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+import { runtimeEnv } from './runtimeConfig';
+
+const supabaseUrl = runtimeEnv('VITE_SUPABASE_URL');
+const supabaseAnonKey = runtimeEnv('VITE_SUPABASE_ANON_KEY');
 export const hasAuthConfig = Boolean(supabaseUrl && supabaseAnonKey);
 
 export const supabase: SupabaseClient | null = hasAuthConfig

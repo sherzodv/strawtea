@@ -2,6 +2,10 @@
 
 Local-first setup for the Strawtea Rust backend and Svelte PWA.
 
+## Deployment
+
+Railway deployment is documented in [RAILWAY.md](./RAILWAY.md). It runs the Rust backend and built Svelte UI in one Docker image, backed by Railway PostgreSQL.
+
 ## Local Database
 
 Start PostgreSQL:

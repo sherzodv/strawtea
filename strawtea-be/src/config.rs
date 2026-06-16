@@ -24,7 +24,9 @@ impl Config {
             twelve_data_api_key: env::var("STRAWTEA_TWELVE_API_KEY")
                 .or_else(|_| env::var("TWELVE_DATA_API_KEY"))
                 .context("STRAWTEA_TWELVE_API_KEY or TWELVE_DATA_API_KEY must be set")?,
-            http_addr: env::var("HTTP_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".to_string()),
+            http_addr: env::var("HTTP_ADDR")
+                .or_else(|_| env::var("PORT").map(|port| format!("0.0.0.0:{port}")))
+                .unwrap_or_else(|_| "127.0.0.1:8080".to_string()),
         })
     }
 }
