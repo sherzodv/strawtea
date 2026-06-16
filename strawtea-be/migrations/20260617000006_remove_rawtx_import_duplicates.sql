@@ -1,0 +1,11 @@
+alter table rawtx
+  drop column source_file_name,
+  drop column source_file_sha256,
+  drop column parser_name,
+  drop column parser_version,
+  drop column bank,
+  drop column account_number_masked,
+  drop column card_number_masked,
+  drop column account_currency,
+  drop column statement_period_start,
+  drop column statement_period_end;

@@ -108,3 +108,95 @@ pub struct InvestlogPerformanceEvent {
     pub quantity: i64,
     pub notes: String,
 }
+
+#[derive(Debug, Serialize)]
+pub struct RawtxImport {
+    pub id: Uuid,
+    pub source_file_name: String,
+    pub source_file_sha256: String,
+    pub parser_name: String,
+    pub parser_version: i32,
+    pub bank: String,
+    pub account_number_masked: Option<String>,
+    pub card_number_masked: Option<String>,
+    pub account_currency: String,
+    pub statement_period_start: Option<NaiveDate>,
+    pub statement_period_end: Option<NaiveDate>,
+    pub status: String,
+    pub rows_seen: i32,
+    pub rows_inserted: i32,
+    pub rows_duplicate: i32,
+    pub error: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub confirmed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RawtxPreviewRow {
+    pub id: Uuid,
+    pub row_index: i32,
+    pub occurred_at: DateTime<Utc>,
+    pub posted_date: Option<NaiveDate>,
+    pub description_raw: String,
+    pub operation_amount: i64,
+    pub operation_currency: String,
+    pub fee_amount: i64,
+    pub fee_currency: String,
+    pub account_amount: Option<i64>,
+    pub account_amount_currency: Option<String>,
+    pub direction: String,
+    pub raw_kind: Option<String>,
+    pub is_duplicate: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RawtxImportPreview {
+    pub import: RawtxImport,
+    pub rows: Vec<RawtxPreviewRow>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RawtxList {
+    pub rows: Vec<RawtxRow>,
+    pub total: i64,
+    pub limit: i64,
+    pub offset: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RawtxMonthlySpend {
+    pub month: NaiveDate,
+    pub currency: String,
+    pub amount: i64,
+    pub transaction_count: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RawtxCategorizationPattern {
+    pub pattern: String,
+    pub transaction_count: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RawtxRow {
+    pub id: Uuid,
+    pub source_file_name: String,
+    pub bank: String,
+    pub account_number_masked: Option<String>,
+    pub card_number_masked: Option<String>,
+    pub account_currency: String,
+    pub occurred_at: DateTime<Utc>,
+    pub posted_date: Option<NaiveDate>,
+    pub description_raw: String,
+    pub operation_amount: i64,
+    pub operation_currency: String,
+    pub fee_amount: i64,
+    pub fee_currency: String,
+    pub account_amount: Option<i64>,
+    pub account_amount_currency: Option<String>,
+    pub direction: String,
+    pub raw_kind: Option<String>,
+    pub parser_name: String,
+    pub parser_version: i32,
+    pub created_at: DateTime<Utc>,
+}

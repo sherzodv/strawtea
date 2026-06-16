@@ -1,0 +1,86 @@
+create table rawtx_import (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  source_file_name text not null,
+  source_file_sha256 text not null,
+  parser_name text not null,
+  parser_version integer not null,
+  bank text not null,
+  account_number_masked text,
+  card_number_masked text,
+  account_currency text not null,
+  statement_period_start date,
+  statement_period_end date,
+  status text not null default 'previewed',
+  rows_seen integer not null default 0,
+  rows_inserted integer not null default 0,
+  rows_duplicate integer not null default 0,
+  error text,
+  created_at timestamptz not null default now(),
+  confirmed_at timestamptz,
+  constraint rawtx_import_status_check check (status in ('previewed', 'confirmed', 'failed'))
+);
+
+create table rawtx_import_row (
+  id uuid primary key default gen_random_uuid(),
+  import_id uuid not null references rawtx_import(id) on delete cascade,
+  row_index integer not null,
+  occurred_at timestamptz not null,
+  posted_date date,
+  description_raw text not null,
+  row_raw text not null,
+  operation_amount bigint not null,
+  operation_currency text not null,
+  fee_amount bigint not null default 0,
+  fee_currency text not null,
+  account_amount bigint,
+  account_amount_currency text,
+  direction text not null,
+  raw_kind text,
+  semantic_key_base text not null,
+  semantic_ordinal integer not null,
+  dedupe_key text not null,
+  raw_fingerprint text not null,
+  is_duplicate boolean not null default false,
+  created_at timestamptz not null default now(),
+  unique (import_id, row_index)
+);
+
+create table rawtx (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  import_id uuid not null references rawtx_import(id) on delete restrict,
+  source_file_name text not null,
+  source_file_sha256 text not null,
+  parser_name text not null,
+  parser_version integer not null,
+  bank text not null,
+  account_number_masked text,
+  card_number_masked text,
+  account_currency text not null,
+  statement_period_start date,
+  statement_period_end date,
+  occurred_at timestamptz not null,
+  posted_date date,
+  description_raw text not null,
+  row_raw text not null,
+  operation_amount bigint not null,
+  operation_currency text not null,
+  fee_amount bigint not null default 0,
+  fee_currency text not null,
+  account_amount bigint,
+  account_amount_currency text,
+  direction text not null,
+  raw_kind text,
+  semantic_key_base text not null,
+  semantic_ordinal integer not null,
+  dedupe_key text not null,
+  raw_fingerprint text not null,
+  created_at timestamptz not null default now(),
+  unique (user_id, dedupe_key)
+);
+
+create index rawtx_import_user_created_at_idx on rawtx_import (user_id, created_at desc);
+create index rawtx_import_row_import_idx on rawtx_import_row (import_id, row_index);
+create index rawtx_user_occurred_at_idx on rawtx (user_id, occurred_at desc);
+create index rawtx_user_kind_idx on rawtx (user_id, raw_kind);

@@ -6,6 +6,7 @@ mod integrations;
 mod models;
 mod routes;
 mod state;
+mod statement_parser;
 
 use std::{env, net::SocketAddr};
 
@@ -17,7 +18,7 @@ use tower_http::{
     services::{ServeDir, ServeFile},
     trace::TraceLayer,
 };
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
     auth::SupabaseAuth,
@@ -25,7 +26,8 @@ use crate::{
     db::connect_db,
     integrations::market_data::TwelveDataClient,
     routes::{
-        health::health_routes, investlog::investlog_routes, me::me_routes, stocks::stock_routes,
+        health::health_routes, investlog::investlog_routes, me::me_routes, spends::spends_routes,
+        stocks::stock_routes,
     },
     state::AppState,
 };
@@ -34,8 +36,9 @@ use crate::{
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::registry()
         .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "strawtea_be=debug,tower_http=debug".into()),
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "strawtea_be=debug,tower_http=debug".into())
+                .add_directive("lopdf=warn".parse().expect("valid lopdf log directive")),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -64,7 +67,10 @@ async fn main() -> anyhow::Result<()> {
         .merge(health_routes())
         .nest(
             "/api",
-            me_routes().merge(stock_routes()).merge(investlog_routes()),
+            me_routes()
+                .merge(stock_routes())
+                .merge(investlog_routes())
+                .merge(spends_routes()),
         )
         .fallback_service(static_files)
         .layer(CorsLayer::permissive())

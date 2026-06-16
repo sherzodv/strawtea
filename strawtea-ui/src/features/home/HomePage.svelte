@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { BookOpen } from '@lucide/svelte';
+  import { BookOpen, ReceiptText } from '@lucide/svelte';
   import { route } from '../../lib/router';
 </script>
 
@@ -10,6 +10,13 @@
         <BookOpen size={42} strokeWidth={1.8} />
       </span>
       <span>Investlog</span>
+    </button>
+
+    <button class="stea-app-tile" type="button" on:click={() => route.navigate('/spends')}>
+      <span class="stea-app-icon">
+        <ReceiptText size={42} strokeWidth={1.8} />
+      </span>
+      <span>Spends</span>
     </button>
   </div>
 </section>

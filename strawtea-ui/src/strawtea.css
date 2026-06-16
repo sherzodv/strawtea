@@ -76,6 +76,10 @@ a {
   gap: 14px;
 }
 
+.stea-grow {
+  flex: 1;
+}
+
 .stea-row-between {
   display: flex;
   align-items: center;
@@ -562,6 +566,27 @@ a {
 
 .stea-table tbody tr:last-child td {
   border-bottom: 0;
+}
+
+.stea-table-empty {
+  color: #786f63;
+  text-align: center;
+}
+
+.stea-table-readable {
+  min-width: 980px;
+}
+
+.stea-table-readable th:nth-child(2),
+.stea-table-readable td:nth-child(2),
+.stea-table-readable th:nth-child(3),
+.stea-table-readable td:nth-child(3) {
+  text-align: left;
+}
+
+.stea-table-readable td:nth-child(2) {
+  max-width: 320px;
+  white-space: normal;
 }
 
 .stea-badge {

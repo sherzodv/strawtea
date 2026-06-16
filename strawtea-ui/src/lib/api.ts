@@ -95,6 +95,91 @@ export type CreateInvestlogEntry = {
   notes: string;
 };
 
+export type RawtxImport = {
+  id: string;
+  source_file_name: string;
+  source_file_sha256: string;
+  parser_name: string;
+  parser_version: number;
+  bank: string;
+  account_number_masked: string | null;
+  card_number_masked: string | null;
+  account_currency: string;
+  statement_period_start: string | null;
+  statement_period_end: string | null;
+  status: 'previewed' | 'confirmed' | 'failed';
+  rows_seen: number;
+  rows_inserted: number;
+  rows_duplicate: number;
+  error: string | null;
+  created_at: string;
+  confirmed_at: string | null;
+};
+
+export type RawtxPreviewRow = {
+  id: string;
+  row_index: number;
+  occurred_at: string;
+  posted_date: string | null;
+  description_raw: string;
+  operation_amount: number;
+  operation_currency: string;
+  fee_amount: number;
+  fee_currency: string;
+  account_amount: number | null;
+  account_amount_currency: string | null;
+  direction: 'debit' | 'credit' | 'neutral';
+  raw_kind: string | null;
+  is_duplicate: boolean;
+};
+
+export type RawtxImportPreview = {
+  import: RawtxImport;
+  rows: RawtxPreviewRow[];
+};
+
+export type RawtxRow = {
+  id: string;
+  source_file_name: string;
+  bank: string;
+  account_number_masked: string | null;
+  card_number_masked: string | null;
+  account_currency: string;
+  occurred_at: string;
+  posted_date: string | null;
+  description_raw: string;
+  operation_amount: number;
+  operation_currency: string;
+  fee_amount: number;
+  fee_currency: string;
+  account_amount: number | null;
+  account_amount_currency: string | null;
+  direction: 'debit' | 'credit' | 'neutral';
+  raw_kind: string | null;
+  parser_name: string;
+  parser_version: number;
+  created_at: string;
+};
+
+export type RawtxList = {
+  rows: RawtxRow[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type RawtxMonthlySpend = {
+  month: string;
+  currency: string;
+  amount: number;
+  transaction_count: number;
+};
+
+export type RawtxCategorizationPattern = {
+  pattern: string;
+  transaction_count: number;
+};
+
 export async function searchTickers(query: string): Promise<TickerSearchResult[]> {
   return apiFetch(`/api/stocks/search?q=${encodeURIComponent(query)}`);
 }
@@ -132,15 +217,55 @@ export async function createInvestlogEntry(
   });
 }
 
+export async function previewRawtxImport(file: File): Promise<RawtxImportPreview> {
+  const formData = new FormData();
+  formData.set('file', file);
+
+  return apiFetch('/api/spends/imports/preview', {
+    method: 'POST',
+    body: formData
+  });
+}
+
+export async function confirmRawtxImport(importId: string): Promise<RawtxImportPreview> {
+  return apiFetch(`/api/spends/imports/${encodeURIComponent(importId)}/confirm`, {
+    method: 'POST'
+  });
+}
+
+export async function listRawtx(options: {
+  q?: string;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<RawtxList> {
+  const params = new URLSearchParams();
+  if (options.q?.trim()) params.set('q', options.q.trim());
+  if (options.limit) params.set('limit', String(options.limit));
+  if (options.offset) params.set('offset', String(options.offset));
+
+  const suffix = params.toString();
+  return apiFetch(`/api/spends/rawtx${suffix ? `?${suffix}` : ''}`);
+}
+
+export async function listMonthlySpends(): Promise<RawtxMonthlySpend[]> {
+  return apiFetch('/api/spends/monthly');
+}
+
+export async function listCategorizationPatterns(): Promise<RawtxCategorizationPattern[]> {
+  return apiFetch('/api/spends/categorization/patterns');
+}
+
 async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = await accessToken();
+  const headers = new Headers(init.headers);
+  if (!(init.body instanceof FormData) && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  headers.set('Authorization', `Bearer ${token}`);
+
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...init.headers,
-      Authorization: `Bearer ${token}`
-    }
+    headers
   });
 
   if (!response.ok) {
