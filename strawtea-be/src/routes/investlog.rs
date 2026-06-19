@@ -151,7 +151,9 @@ async fn list_assets(
           ticker,
           sum(case when op = 'buy' then quantity else -quantity end)::bigint as quantity,
           sum(case when op = 'buy' then ((price * quantity + 50) / 100) + fees else 0 end)::bigint as buy_cost,
-          sum(case when op = 'buy' then quantity else 0 end)::bigint as buy_quantity
+          sum(case when op = 'buy' then quantity else 0 end)::bigint as buy_quantity,
+          (min(occurred_at) filter (where op = 'buy'))::date as first_buy_date,
+          (max(occurred_at) filter (where op = 'buy'))::date as last_buy_date
         from investlog
         where user_id = $1
         group by ticker
@@ -164,6 +166,7 @@ async fn list_assets(
     .await?;
 
     let mut assets = Vec::with_capacity(rows.len());
+    let today = Utc::now().date_naive();
 
     for row in rows {
         let cached_price = cached_or_refreshed_price(&state, &row.ticker).await?;
@@ -172,6 +175,12 @@ async fn list_assets(
         let cost = rounded_div(avg_buy_price * row.quantity, 100);
         let current_value = rounded_div(cached_price.price * row.quantity, 100);
         let amount_change = current_value - cost;
+        let buy_span_days = row
+            .last_buy_date
+            .signed_duration_since(row.first_buy_date)
+            .num_days();
+        let buy_midpoint_date = row.first_buy_date + Duration::days(buy_span_days / 2);
+        let days_since_buy_midpoint = today.signed_duration_since(buy_midpoint_date).num_days();
         let percent_change = if cost == 0 {
             0.0
         } else {
@@ -180,6 +189,7 @@ async fn list_assets(
 
         assets.push(InvestlogAsset {
             ticker: row.ticker,
+            days_since_buy_midpoint,
             quantity: row.quantity,
             avg_buy_price,
             cost,
@@ -507,6 +517,8 @@ struct AssetRow {
     quantity: i64,
     buy_cost: i64,
     buy_quantity: i64,
+    first_buy_date: NaiveDate,
+    last_buy_date: NaiveDate,
 }
 
 #[derive(sqlx::FromRow)]

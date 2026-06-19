@@ -207,6 +207,10 @@
     })}%`;
   }
 
+  function formatDays(value: number) {
+    return value.toLocaleString();
+  }
+
   function changeClass(value: number) {
     if (value > 0) {
       return 'stea-gain';
@@ -380,26 +384,28 @@
             <thead>
               <tr>
                 <th>Ticker</th>
+                <th>Days since mid buys</th>
+                <th>Change %</th>
+                <th>Change</th>
+                <th>Cost</th>
                 <th>Qty</th>
                 <th>Price</th>
-                <th>Cost</th>
                 <th>Current</th>
                 <th>Price change</th>
-                <th>Change</th>
-                <th>Change %</th>
               </tr>
             </thead>
             <tbody>
               {#each assets as asset}
                 <tr>
                   <td><strong>{asset.ticker}</strong></td>
+                  <td>{formatDays(asset.days_since_buy_midpoint)}</td>
+                  <td class={changeClass(asset.percent_change)}>{formatPercent(asset.percent_change)}</td>
+                  <td class={changeClass(asset.amount_change)}>{formatMoney(asset.amount_change)}</td>
+                  <td>{formatMoney(asset.cost)}</td>
                   <td>{formatQuantity(asset.quantity)}</td>
                   <td>{formatMoney(asset.avg_buy_price)}</td>
-                  <td>{formatMoney(asset.cost)}</td>
                   <td>{formatMoney(asset.current_price)}</td>
                   <td class={changeClass(asset.price_change)}>{formatMoney(asset.price_change)}</td>
-                  <td class={changeClass(asset.amount_change)}>{formatMoney(asset.amount_change)}</td>
-                  <td class={changeClass(asset.percent_change)}>{formatPercent(asset.percent_change)}</td>
                 </tr>
               {/each}
             </tbody>

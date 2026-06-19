@@ -66,6 +66,7 @@ pub struct InvestlogEntry {
 #[derive(Debug, Serialize)]
 pub struct InvestlogAsset {
     pub ticker: String,
+    pub days_since_buy_midpoint: i64,
     pub quantity: i64,
     pub avg_buy_price: i64,
     pub cost: i64,

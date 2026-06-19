@@ -42,6 +42,7 @@ export type InvestlogEntry = {
 
 export type InvestlogAsset = {
   ticker: string;
+  days_since_buy_midpoint: number;
   quantity: number;
   avg_buy_price: number;
   cost: number;
