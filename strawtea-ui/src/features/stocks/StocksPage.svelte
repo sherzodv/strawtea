@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowLeft, Search } from '@lucide/svelte';
+  import { Search } from '@lucide/svelte';
   import { onDestroy } from 'svelte';
   import {
     fetchPriceHistory,
@@ -7,7 +7,6 @@
     type PriceHistory,
     type TickerSearchResult
   } from '../../lib/api';
-  import { route } from '../../lib/router';
   import StockChart from './StockChart.svelte';
 
   let query = '';
@@ -65,16 +64,6 @@
 </script>
 
 <section class="stea-stack">
-  <div class="stea-row">
-    <button class="stea-icon-btn" type="button" aria-label="Back home" on:click={() => route.navigate('/')}>
-      <ArrowLeft size={20} />
-    </button>
-    <div>
-      <p class="stea-eyebrow">Stocks</p>
-      <h1 class="stea-heading">Market lookup</h1>
-    </div>
-  </div>
-
   <label class="stea-search">
     <Search size={20} />
     <input bind:value={query} type="search" placeholder="Search ticker, e.g. AAPL" />

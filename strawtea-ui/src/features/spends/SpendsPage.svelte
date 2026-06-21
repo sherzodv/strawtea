@@ -182,13 +182,6 @@
 </script>
 
 <section class="stea-stack-lg">
-  <div class="stea-row-between">
-    <div>
-      <p class="stea-eyebrow">Spends</p>
-      <h1 class="stea-heading">Raw imports</h1>
-    </div>
-  </div>
-
   <div class="stea-tabs" role="tablist" aria-label="Spends sections">
     <button
       class:stea-tab-active={activeTab === 'monthly'}

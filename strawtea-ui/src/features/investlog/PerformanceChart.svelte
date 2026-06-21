@@ -1,17 +1,71 @@
 <script lang="ts">
   import type { InvestlogPerformance } from '../../lib/api';
+  import type { AnalysisIntervalSetting } from '../../lib/settings';
+  import { chartColorForAssetIndex, chartColors } from './chartColors';
 
   export let performance: InvestlogPerformance;
   export let assetTickers: string[] = [];
+  export let colorTickers: string[] = [];
+  export let interval: AnalysisIntervalSetting | null = null;
+  export let onIntervalChange: (interval: AnalysisIntervalSetting | null) => void = () => {};
 
   const width = 100;
   const height = 100;
-  const colors = ['#315c4d', '#3e6f9f', '#8a4b32', '#7a5ea8', '#5f574d', '#a46a2a', '#2f7771', '#9f2d2d'];
+  type ChartTargetPoint = {
+    ticker: string;
+    date: string;
+    close: number;
+    index: number;
+    x: number;
+    y: number;
+  };
+
+  let anchorPoint: ChartTargetPoint | null = null;
+  let comparePoint: ChartTargetPoint | null = null;
+  let activeTarget: 'anchor' | 'compare' | null = null;
+  let nextTarget: 'anchor' | 'compare' = 'anchor';
+  let appliedIntervalKey = '';
 
   $: values = performance.series.flatMap((series) => series.points.map((point) => point.index));
   $: min = Math.min(...values, 95);
   $: max = Math.max(...values, 105);
   $: spread = Math.max(max - min, 1);
+  $: targetSeries =
+    performance.series.find((series) => isAssetTicker(series.ticker) && series.points.length > 0) ??
+    performance.series.find((series) => series.points.length > 0);
+  $: targetSeriesPoints =
+    targetSeries?.points.map((point) => ({
+      ticker: targetSeries.ticker,
+      date: point.date,
+      close: point.close,
+      index: point.index,
+      x: xForPoint(targetSeries.points, point.date),
+      y: yForValue(point.index)
+    })) ?? [];
+  $: applyIntervalSetting(interval, targetSeriesPoints);
+  $: intervalStartX =
+    anchorPoint && comparePoint ? Math.min(anchorPoint.x, comparePoint.x) : 0;
+  $: intervalWidth =
+    anchorPoint && comparePoint ? Math.abs(anchorPoint.x - comparePoint.x) : 0;
+  $: intervalChange =
+    anchorPoint && comparePoint ? comparePoint.close - anchorPoint.close : 0;
+  $: intervalChangePercent =
+    anchorPoint && comparePoint && anchorPoint.close > 0
+      ? ((comparePoint.close - anchorPoint.close) / anchorPoint.close) * 100
+      : 0;
+  $: intervalDays =
+    anchorPoint && comparePoint
+      ? Math.abs(
+          Math.round(
+            (new Date(comparePoint.date).getTime() - new Date(anchorPoint.date).getTime()) /
+              86_400_000
+          )
+        )
+      : 0;
+  $: anchorPriceLabelPosition =
+    anchorPoint && comparePoint && anchorPoint.y <= comparePoint.y ? 'above' : 'below';
+  $: comparePriceLabelPosition =
+    anchorPoint && comparePoint && comparePoint.y <= anchorPoint.y ? 'above' : 'below';
   $: eventPoints = performance.events
     .map((event) => {
       const series = performance.series.find((item) => item.ticker === event.ticker);
@@ -69,12 +123,124 @@
     return `${amount} $`;
   }
 
-  function colorForIndex(index: number) {
-    return colors[index % colors.length];
+  function formatPercent(value: number) {
+    return `${value.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })}%`;
+  }
+
+  function colorForSeries(ticker: string, index: number) {
+    const colorIndex = colorTickers.indexOf(ticker);
+    return colorIndex >= 0 ? chartColorForAssetIndex(colorIndex) : chartColors[index % chartColors.length];
   }
 
   function isAssetTicker(ticker: string) {
     return assetTickers.includes(ticker);
+  }
+
+  function pointForEvent(event: PointerEvent) {
+    const target = event.currentTarget as HTMLElement;
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(Math.max(((event.clientX - rect.left) / rect.width) * 100, 0), 100);
+    return targetSeriesPoints.reduce<ChartTargetPoint | null>((nearest, point) => {
+      if (!nearest) {
+        return point;
+      }
+
+      const nearestDistance = Math.abs(nearest.x - x);
+      const pointDistance = Math.abs(point.x - x);
+
+      return pointDistance < nearestDistance ? point : nearest;
+    }, null);
+  }
+
+  function pointForDate(date: string) {
+    const targetTime = Date.parse(date);
+
+    if (!Number.isFinite(targetTime)) {
+      return null;
+    }
+
+    return targetSeriesPoints.reduce<ChartTargetPoint | null>((nearest, point) => {
+      if (!nearest) {
+        return point;
+      }
+
+      const nearestDistance = Math.abs(Date.parse(nearest.date) - targetTime);
+      const pointDistance = Math.abs(Date.parse(point.date) - targetTime);
+
+      return pointDistance < nearestDistance ? point : nearest;
+    }, null);
+  }
+
+  function applyIntervalSetting(
+    value: AnalysisIntervalSetting | null,
+    points: ChartTargetPoint[]
+  ) {
+    const pointsKey = `${points.length}:${points[0]?.date ?? ''}:${points.at(-1)?.date ?? ''}`;
+    const nextKey = `${value?.anchorDate ?? ''}:${value?.compareDate ?? ''}:${value?.nextTarget ?? ''}:${pointsKey}`;
+
+    if (nextKey === appliedIntervalKey) {
+      return;
+    }
+
+    appliedIntervalKey = nextKey;
+    anchorPoint = value?.anchorDate ? pointForDate(value.anchorDate) : null;
+    comparePoint = value?.compareDate ? pointForDate(value.compareDate) : null;
+    nextTarget = value?.nextTarget ?? 'anchor';
+  }
+
+  function setActiveTargetPoint(event: PointerEvent) {
+    const nearestPoint = pointForEvent(event);
+    if (!nearestPoint || !activeTarget) {
+      return;
+    }
+
+    if (activeTarget === 'anchor') {
+      anchorPoint = nearestPoint;
+      return;
+    }
+
+    comparePoint = nearestPoint;
+  }
+
+  function startTargetGesture(event: PointerEvent) {
+    event.preventDefault();
+    activeTarget = nextTarget;
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    setActiveTargetPoint(event);
+  }
+
+  function dragTargetGesture(event: PointerEvent) {
+    setActiveTargetPoint(event);
+  }
+
+  function finishTargetGesture(event: PointerEvent) {
+    const target = event.currentTarget as HTMLElement;
+
+    if (target.hasPointerCapture(event.pointerId)) {
+      target.releasePointerCapture(event.pointerId);
+    }
+
+    if (activeTarget) {
+      nextTarget = activeTarget === 'anchor' ? 'compare' : 'anchor';
+    }
+
+    activeTarget = null;
+    onIntervalChange(currentIntervalSetting());
+  }
+
+  function currentIntervalSetting(): AnalysisIntervalSetting | null {
+    if (!anchorPoint || !comparePoint) {
+      return null;
+    }
+
+    return {
+      anchorDate: anchorPoint.date,
+      compareDate: comparePoint.date,
+      nextTarget
+    };
   }
 </script>
 
@@ -82,27 +248,13 @@
   <p class="stea-muted">No performance data available.</p>
 {:else}
   <div class="stea-panel">
-    <div class="stea-row-between stea-mb-sm">
-      <div>
-        <p class="stea-eyebrow">{performance.range.toUpperCase()} performance</p>
-        <h2 class="stea-heading-sm">{performance.tickers.join(', ')}</h2>
-      </div>
-      <div class="stea-legend">
-        {#each performance.series as series, index}
-          <span class:stea-legend-strong={isAssetTicker(series.ticker)}>
-            <i class="stea-swatch" style={`background: ${colorForIndex(index)}`}></i>{series.ticker}
-          </span>
-        {/each}
-      </div>
-    </div>
-
     <div class="stea-chart-wrap">
       <svg class="stea-chart" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="Ticker versus benchmark performance chart">
         {#each performance.series as series, index}
           <polyline
             points={linePoints(series.points)}
             fill="none"
-            stroke={colorForIndex(index)}
+            stroke={colorForSeries(series.ticker, index)}
             stroke-width={isAssetTicker(series.ticker) ? 3 : 2}
             vector-effect="non-scaling-stroke"
           />
@@ -118,6 +270,52 @@
           <span class="stea-sr-only">{event.op.toUpperCase()} {event.date}: {formatMoney(event.price)} - {event.notes}</span>
         </span>
       {/each}
+      <button
+        class="stea-chart-target-layer"
+        type="button"
+        aria-label="Move chart target"
+        on:pointerdown={startTargetGesture}
+        on:pointermove={dragTargetGesture}
+        on:pointerup={finishTargetGesture}
+        on:pointercancel={finishTargetGesture}
+      >
+        {#if anchorPoint && comparePoint}
+          <span class="stea-chart-target-interval" style={`left: ${intervalStartX}%; width: ${intervalWidth}%;`}></span>
+          <span
+            class={intervalChangePercent >= 0 ? 'stea-chart-target-change stea-gain' : 'stea-chart-target-change stea-loss'}
+          >
+            {formatPercent(intervalChangePercent)} · {formatMoney(intervalChange)} · {intervalDays}d
+          </span>
+        {/if}
+        {#if anchorPoint}
+          <span class="stea-chart-target-x stea-chart-target-x-anchor" style={`left: ${anchorPoint.x}%;`}></span>
+          <span class="stea-chart-target-y stea-chart-target-y-anchor" style={`top: ${anchorPoint.y}%;`}></span>
+          <span class="stea-chart-target-dot stea-chart-target-dot-anchor" style={`left: ${anchorPoint.x}%; top: ${anchorPoint.y}%;`}></span>
+          <span class="stea-chart-target-label stea-chart-target-label-x" style={`left: ${anchorPoint.x}%;`}>{anchorPoint.date}</span>
+          <span
+            class={anchorPriceLabelPosition === 'above'
+              ? 'stea-chart-target-label stea-chart-target-price-label stea-chart-target-price-label-above'
+              : 'stea-chart-target-label stea-chart-target-price-label stea-chart-target-price-label-below'}
+            style={`top: ${anchorPoint.y}%;`}
+          >
+            {anchorPoint.ticker} {formatMoney(anchorPoint.close)}
+          </span>
+        {/if}
+        {#if comparePoint}
+          <span class="stea-chart-target-x" style={`left: ${comparePoint.x}%;`}></span>
+          <span class="stea-chart-target-y" style={`top: ${comparePoint.y}%;`}></span>
+          <span class="stea-chart-target-dot" style={`left: ${comparePoint.x}%; top: ${comparePoint.y}%;`}></span>
+          <span
+            class={comparePriceLabelPosition === 'above'
+              ? 'stea-chart-target-label stea-chart-target-price-label stea-chart-target-price-label-above'
+              : 'stea-chart-target-label stea-chart-target-price-label stea-chart-target-price-label-below'}
+            style={`top: ${comparePoint.y}%;`}
+          >
+            {comparePoint.ticker} {formatMoney(comparePoint.close)}
+          </span>
+          <span class="stea-chart-target-label stea-chart-target-label-x" style={`left: ${comparePoint.x}%;`}>{comparePoint.date}</span>
+        {/if}
+      </button>
     </div>
 
     <div class="stea-meta-row stea-meta-row-sm">

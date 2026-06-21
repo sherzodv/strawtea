@@ -26,8 +26,8 @@ use crate::{
     db::connect_db,
     integrations::market_data::TwelveDataClient,
     routes::{
-        health::health_routes, investlog::investlog_routes, me::me_routes, spends::spends_routes,
-        stocks::stock_routes,
+        health::health_routes, investlog::investlog_routes, me::me_routes,
+        settings::settings_routes, spends::spends_routes, stocks::stock_routes,
     },
     state::AppState,
 };
@@ -70,6 +70,7 @@ async fn main() -> anyhow::Result<()> {
             me_routes()
                 .merge(stock_routes())
                 .merge(investlog_routes())
+                .merge(settings_routes())
                 .merge(spends_routes()),
         )
         .fallback_service(static_files)

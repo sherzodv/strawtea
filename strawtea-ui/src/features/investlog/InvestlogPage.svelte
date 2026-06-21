@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowLeft, BookOpen, Plus } from '@lucide/svelte';
+  import { BookOpen, Plus } from '@lucide/svelte';
   import { onMount } from 'svelte';
   import {
     createInvestlogEntry,
@@ -12,7 +12,12 @@
     type InvestlogPerformance,
     type InvestlogPerformanceRange
   } from '../../lib/api';
-  import { route } from '../../lib/router';
+  import {
+    appSettings,
+    type AnalysisIntervalSetting,
+    type InvestlogAnalysisSettings,
+    type InvestlogTab
+  } from '../../lib/settings';
   import PerformanceChart from './PerformanceChart.svelte';
   import TickerPicker from './TickerPicker.svelte';
 
@@ -31,28 +36,62 @@
   let isLoadingPerformance = false;
   let isModalOpen = false;
   let selectedAnalysisTickers: string[] = [];
-  let performanceRange: InvestlogPerformanceRange = '1y';
+  let recentAnalysisTickers: string[] = [];
+  let performanceRange: InvestlogPerformanceRange = '6m';
+  let analysisInterval: AnalysisIntervalSetting | null = null;
   let performance: InvestlogPerformance | null = null;
-  let activeTab: 'assets' | 'history' = 'assets';
+  let activeTab: InvestlogTab = 'assets';
+  const performanceRanges: Array<{ value: InvestlogPerformanceRange; label: string }> = [
+    { value: '1m', label: '1M' },
+    { value: '3m', label: '3M' },
+    { value: '6m', label: '6M' },
+    { value: '1y', label: '1Y' },
+    { value: '3y', label: '3Y' }
+  ];
 
   $: notesLabel = op === 'buy' ? 'Justify why you bought this' : 'Justify why you sold this';
+  $: assetTickers = assets.map((asset) => asset.ticker);
+  $: analysisColorTickers = [
+    ...assetTickers,
+    ...selectedAnalysisTickers.filter((ticker) => !assetTickers.includes(ticker))
+  ];
   $: draftPrice = parseDecimal(price);
   $: draftQuantity = parseDecimal(quantity);
   $: draftFees = parseDecimal(fees || '0');
   $: draftGross = draftPrice * draftQuantity;
   $: draftNet = op === 'buy' ? draftGross + draftFees : draftGross - draftFees;
 
-  onMount(loadEntries);
+  onMount(loadInvestlog);
 
-  async function loadEntries() {
+  async function loadInvestlog() {
     isLoading = true;
     error = '';
 
     try {
-      [entries, assets] = await Promise.all([listInvestlogEntries(), listInvestlogAssets()]);
+      const [pageSettings, analysisSettings, loadedEntries, loadedAssets] = await Promise.all([
+        appSettings.investlog.page.load(),
+        appSettings.investlog.analysis.load(),
+        listInvestlogEntries(),
+        listInvestlogAssets()
+      ]);
+
+      activeTab = normalizeTab(pageSettings.activeTab);
+      selectedAnalysisTickers = uniqueSymbols(analysisSettings.selectedTickers);
+      recentAnalysisTickers = uniqueSymbols(
+        analysisSettings.recentTickers.length > 0
+          ? analysisSettings.recentTickers
+          : analysisSettings.tickerHistory ?? readLegacyAnalysisTickerHistory()
+      ).slice(0, 10);
+      performanceRange = normalizePerformanceRange(analysisSettings.range);
+      analysisInterval = normalizeInterval(analysisSettings.interval);
+      entries = loadedEntries;
+      assets = loadedAssets;
+
       if (selectedAnalysisTickers.length === 0 && assets[0]) {
         selectedAnalysisTickers = [assets[0].ticker];
+        saveAnalysisSettings();
       }
+
       await loadPerformance();
     } catch (err) {
       error = err instanceof Error ? err.message : 'Could not load journal';
@@ -92,6 +131,7 @@
       assets = await listInvestlogAssets();
       if (selectedAnalysisTickers.length === 0 && assets[0]) {
         selectedAnalysisTickers = [assets[0].ticker];
+        saveAnalysisSettings();
       }
       await loadPerformance();
       closeModal();
@@ -230,34 +270,95 @@
     }
 
     selectedAnalysisTickers = [...selectedAnalysisTickers, normalized];
+    analysisInterval = null;
+    saveAnalysisSettings();
     loadPerformance();
   }
 
   function removeAnalysisTicker(ticker: string) {
     selectedAnalysisTickers = selectedAnalysisTickers.filter((item) => item !== ticker);
+    analysisInterval = null;
+    saveAnalysisSettings();
     loadPerformance();
+  }
+
+  function setAnalysisTickerHistory(tickers: string[]) {
+    recentAnalysisTickers = uniqueSymbols(tickers).slice(0, 10);
+    saveAnalysisSettings();
+  }
+
+  function selectPerformanceRange(range: InvestlogPerformanceRange) {
+    if (performanceRange === range) {
+      return;
+    }
+
+    performanceRange = range;
+    saveAnalysisSettings();
+    loadPerformance();
+  }
+
+  function selectActiveTab(tab: InvestlogTab) {
+    activeTab = tab;
+    appSettings.investlog.page.save({ activeTab });
+  }
+
+  function setAnalysisInterval(interval: AnalysisIntervalSetting | null) {
+    analysisInterval = interval;
+    saveAnalysisSettings();
+  }
+
+  function saveAnalysisSettings() {
+    appSettings.investlog.analysis.save(currentAnalysisSettings());
+  }
+
+  function currentAnalysisSettings(): InvestlogAnalysisSettings {
+    return {
+      selectedTickers: selectedAnalysisTickers,
+      recentTickers: recentAnalysisTickers,
+      range: performanceRange,
+      interval: analysisInterval
+    };
+  }
+
+  function normalizeTab(value: string): InvestlogTab {
+    return value === 'analysis' || value === 'history' ? value : 'assets';
+  }
+
+  function normalizePerformanceRange(value: string): InvestlogPerformanceRange {
+    return performanceRanges.some((range) => range.value === value)
+      ? (value as InvestlogPerformanceRange)
+      : '6m';
+  }
+
+  function normalizeInterval(value: AnalysisIntervalSetting | null | undefined): AnalysisIntervalSetting | null {
+    if (!value?.anchorDate || !value.compareDate) {
+      return null;
+    }
+
+    return {
+      anchorDate: value.anchorDate,
+      compareDate: value.compareDate,
+      nextTarget: value.nextTarget === 'compare' ? 'compare' : 'anchor'
+    };
+  }
+
+  function readLegacyAnalysisTickerHistory() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('strawtea:analysis-ticker-history') ?? '[]');
+      return Array.isArray(parsed) ? uniqueSymbols(parsed).slice(0, 10) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function uniqueSymbols(items: string[]) {
+    return Array.from(
+      new Set(items.map((item) => item.trim().toUpperCase()).filter(Boolean))
+    );
   }
 </script>
 
 <section class="stea-stack-lg">
-  <div class="stea-row">
-    <button class="stea-icon-btn" type="button" aria-label="Back home" on:click={() => route.navigate('/')}>
-      <ArrowLeft size={20} />
-    </button>
-    <div>
-      <p class="stea-eyebrow">Investment Journal</p>
-      <h1 class="stea-heading">Investlog</h1>
-    </div>
-  </div>
-
-  <div class="stea-row-between">
-    <p class="stea-muted">Track buys and sells with the reason behind each decision.</p>
-    <button class="stea-btn-primary stea-btn-fit" type="button" on:click={openModal}>
-      <Plus size={20} />
-      Add entry
-    </button>
-  </div>
-
   {#if isModalOpen}
     <div class="stea-modal-backdrop">
       <div class="stea-modal" role="dialog" aria-modal="true" aria-labelledby="investlog-modal-title" tabindex="-1">
@@ -352,28 +453,37 @@
       type="button"
       role="tab"
       aria-selected={activeTab === 'assets'}
-      on:click={() => (activeTab = 'assets')}
+      on:click={() => selectActiveTab('assets')}
     >
       Assets
+    </button>
+    <button
+      class={activeTab === 'analysis' ? 'stea-tab stea-tab-active' : 'stea-tab'}
+      type="button"
+      role="tab"
+      aria-selected={activeTab === 'analysis'}
+      on:click={() => selectActiveTab('analysis')}
+    >
+      Analysis
     </button>
     <button
       class={activeTab === 'history' ? 'stea-tab stea-tab-active' : 'stea-tab'}
       type="button"
       role="tab"
       aria-selected={activeTab === 'history'}
-      on:click={() => (activeTab = 'history')}
+      on:click={() => selectActiveTab('history')}
     >
       History
     </button>
+    {#if activeTab === 'assets'}
+      <button class="stea-tab-action" type="button" aria-label="Add entry" on:click={openModal}>
+        <Plus size={16} />
+      </button>
+    {/if}
   </div>
 
   {#if activeTab === 'assets'}
     <section class="stea-stack" aria-label="Current investment assets">
-      <div class="stea-row">
-        <BookOpen size={20} />
-        <h2 class="stea-heading-sm">Assets</h2>
-      </div>
-
       {#if isLoading}
         <p class="stea-muted">Loading assets</p>
       {:else if assets.length === 0}
@@ -384,8 +494,8 @@
             <thead>
               <tr>
                 <th>Ticker</th>
-                <th>Days since mid buys</th>
-                <th>Change %</th>
+                <th>Days</th>
+                <th>%</th>
                 <th>Change</th>
                 <th>Cost</th>
                 <th>Qty</th>
@@ -413,55 +523,51 @@
         </div>
       {/if}
     </section>
-
+  {:else if activeTab === 'analysis'}
     <section class="stea-stack" aria-label="Ticker analysis against benchmark">
-      <div class="stea-row-between">
-        <div class="stea-row">
-          <BookOpen size={20} />
-          <h2 class="stea-heading-sm">Analysis</h2>
-        </div>
-        <div class="stea-toolbar">
-          <label class="stea-field">
-            <span class="stea-field-label">Range</span>
-            <select class="stea-input" bind:value={performanceRange} on:change={loadPerformance}>
-              <option value="1m">1M</option>
-              <option value="3m">3M</option>
-              <option value="6m">6M</option>
-              <option value="1y">1Y</option>
-              <option value="3y">3Y</option>
-            </select>
-          </label>
-        </div>
-      </div>
-
       <TickerPicker
-        label="Add ticker"
+        label=""
         selected={selectedAnalysisTickers}
-        assetTickers={assets.map((asset) => asset.ticker)}
-        historyKey="strawtea:analysis-ticker-history"
+        assetTickers={assetTickers}
+        history={recentAnalysisTickers}
         search={searchTickers}
         onSelect={addAnalysisTicker}
+        onRemove={removeAnalysisTicker}
+        onHistoryChange={setAnalysisTickerHistory}
       />
 
-      {#if selectedAnalysisTickers.length > 0}
-        <div class="stea-chip-row" aria-label="Selected analysis tickers">
-          {#each selectedAnalysisTickers as ticker}
-            <button class="stea-chip stea-chip-active" type="button" on:click={() => removeAnalysisTicker(ticker)}>
-              {ticker} ×
+      <section class="stea-picker-section" aria-label="Analysis range">
+        <p class="stea-picker-heading">Range</p>
+        <div class="stea-chip-row">
+          {#each performanceRanges as range}
+            <button
+              class="stea-chip"
+              class:stea-chip-active={performanceRange === range.value}
+              type="button"
+              aria-pressed={performanceRange === range.value}
+              on:click={() => selectPerformanceRange(range.value)}
+            >
+              {range.label}
             </button>
           {/each}
         </div>
-      {/if}
+      </section>
 
       {#if isLoadingPerformance}
         <p class="stea-muted">Loading performance</p>
       {:else if performance}
-        <PerformanceChart {performance} assetTickers={assets.map((asset) => asset.ticker)} />
+        <PerformanceChart
+          {performance}
+          assetTickers={assetTickers}
+          colorTickers={analysisColorTickers}
+          interval={analysisInterval}
+          onIntervalChange={setAnalysisInterval}
+        />
       {:else}
         <p class="stea-muted">Add a ticker to start analysis.</p>
       {/if}
     </section>
-  {:else}
+  {:else if activeTab === 'history'}
     <section class="stea-stack" aria-label="Investment journal history">
       <div class="stea-row">
         <BookOpen size={20} />

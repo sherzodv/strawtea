@@ -9,33 +9,35 @@
 
 <script lang="ts">
   import { Search } from '@lucide/svelte';
-  import { onMount } from 'svelte';
+  import { chartColorForAssetIndex } from './chartColors';
 
   export let label = 'Ticker';
   export let selected: string[] = [];
   export let assetTickers: string[] = [];
-  export let historyKey = 'strawtea:ticker-picker-history';
+  export let history: string[] = [];
   export let search: (query: string) => Promise<TickerPickerOption[]> = async () => [];
   export let onSelect: (ticker: string) => void = () => {};
+  export let onRemove: (ticker: string) => void = () => {};
+  export let onHistoryChange: (tickers: string[]) => void = () => {};
 
   let query = '';
-  let history: string[] = [];
   let results: TickerPickerOption[] = [];
   let isSearching = false;
   let searchTimer: number | undefined;
 
   $: normalizedAssetTickers = uniqueSymbols(assetTickers);
-  $: visibleHistory = history.filter(
+  $: visibleRecentTickers = history.filter(
     (ticker) =>
       !selected.includes(ticker) &&
       !normalizedAssetTickers.includes(ticker)
   );
+  $: visibleTickers = [
+    ...normalizedAssetTickers,
+    ...selected.filter((ticker) => !normalizedAssetTickers.includes(ticker)),
+    ...visibleRecentTickers
+  ];
 
   $: scheduleSearch(query);
-
-  onMount(() => {
-    history = readHistory();
-  });
 
   function scheduleSearch(value: string) {
     window.clearTimeout(searchTimer);
@@ -64,24 +66,20 @@
       return;
     }
 
-    history = [normalized, ...history.filter((item) => item !== normalized)].slice(0, 10);
-    writeHistory(history);
+    const nextHistory = [normalized, ...history.filter((item) => item !== normalized)].slice(0, 10);
+    onHistoryChange(nextHistory);
     query = '';
     results = [];
     onSelect(normalized);
   }
 
-  function readHistory() {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(historyKey) ?? '[]');
-      return Array.isArray(parsed) ? uniqueSymbols(parsed).slice(0, 10) : [];
-    } catch {
-      return [];
+  function toggleTicker(ticker: string) {
+    if (selected.includes(ticker)) {
+      onRemove(ticker);
+      return;
     }
-  }
 
-  function writeHistory(items: string[]) {
-    localStorage.setItem(historyKey, JSON.stringify(items));
+    choose(ticker);
   }
 
   function uniqueSymbols(items: string[]) {
@@ -97,31 +95,34 @@
 
 <div class="stea-picker">
   <label class="stea-field">
-    <span class="stea-field-label">{label}</span>
+    {#if label}
+      <span class="stea-field-label">{label}</span>
+    {/if}
     <span class="stea-search">
       <Search size={18} />
-      <input bind:value={query} type="search" placeholder="Search ticker" />
+      <input bind:value={query} type="search" placeholder="Search ticker" aria-label={label || 'Search ticker'} />
     </span>
   </label>
 
   <div class="stea-picker-body">
-    {#if normalizedAssetTickers.length > 0}
+    {#if visibleTickers.length > 0}
       <section class="stea-picker-section">
-        <p class="stea-picker-heading">Assets</p>
-        <div class="stea-chip-row">
-          {#each normalizedAssetTickers as ticker}
-            <button class="stea-chip stea-chip-asset" class:stea-chip-active={selected.includes(ticker)} type="button" on:click={() => choose(ticker)}>{ticker}</button>
-          {/each}
-        </div>
-      </section>
-    {/if}
-
-    {#if visibleHistory.length > 0}
-      <section class="stea-picker-section stea-picker-section-divided">
-        <p class="stea-picker-heading">Recent</p>
-        <div class="stea-chip-row">
-          {#each visibleHistory as ticker}
-            <button class="stea-chip" class:stea-chip-active={selected.includes(ticker)} type="button" on:click={() => choose(ticker)}>{ticker}</button>
+        <p class="stea-picker-heading">Tickers</p>
+        <div class="stea-chip-row stea-ticker-chip-row">
+          {#each visibleTickers as ticker, index}
+            <button
+              class="stea-chip stea-chip-ticker"
+              class:stea-chip-active={selected.includes(ticker)}
+              type="button"
+              style={`--stea-chip-color: ${chartColorForAssetIndex(index)}`}
+              aria-pressed={selected.includes(ticker)}
+              on:click={() => toggleTicker(ticker)}
+            >
+              {#if normalizedAssetTickers.includes(ticker)}
+                <span class="stea-chip-asset-mark" aria-hidden="true"></span>
+              {/if}
+              {ticker}
+            </button>
           {/each}
         </div>
       </section>

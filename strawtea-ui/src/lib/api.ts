@@ -83,6 +83,10 @@ export type InvestlogPerformance = {
 
 export type InvestlogPerformanceRange = '1m' | '3m' | '6m' | '1y' | '3y';
 
+export type SettingResponse<T> = {
+  value: T | null;
+};
+
 export type CreateInvestlogEntry = {
   ticker: string;
   occurred_at: string;
@@ -215,6 +219,33 @@ export async function createInvestlogEntry(
     method: 'POST',
     body: JSON.stringify(entry)
   });
+}
+
+export async function getSettingValue<T>(
+  section: string,
+  key: string
+): Promise<T | null> {
+  const response = await apiFetch<SettingResponse<T>>(
+    `/api/settings/${encodeURIComponent(section)}/${encodeURIComponent(key)}`
+  );
+
+  return response.value;
+}
+
+export async function putSettingValue<T>(
+  section: string,
+  key: string,
+  value: T
+): Promise<T | null> {
+  const response = await apiFetch<SettingResponse<T>>(
+    `/api/settings/${encodeURIComponent(section)}/${encodeURIComponent(key)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ value })
+    }
+  );
+
+  return response.value;
 }
 
 export async function previewRawtxImport(file: File): Promise<RawtxImportPreview> {

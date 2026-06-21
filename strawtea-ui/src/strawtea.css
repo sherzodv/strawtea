@@ -42,7 +42,7 @@ a {
 
 .stea-shell {
   width: min(100%, 920px);
-  min-height: 100vh;
+  min-height: calc(100vh - 40px);
   margin: 0 auto;
   padding: 20px;
 }
@@ -57,7 +57,7 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 32px;
+  margin-bottom: 22px;
 }
 
 .stea-stack {
@@ -89,6 +89,7 @@ a {
 
 .stea-tabs {
   display: flex;
+  align-items: center;
   gap: 8px;
   border-bottom: 1px solid #ded5c6;
 }
@@ -106,6 +107,22 @@ a {
 .stea-tab-active {
   border-bottom-color: #315c4d;
   color: #25221d;
+}
+
+.stea-tab-action {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  place-items: center;
+  border: 1px solid #315c4d;
+  border-radius: 8px;
+  margin-left: auto;
+  margin-bottom: 6px;
+  padding: 0;
+  color: #fffaf1;
+  background: #315c4d;
+  font-size: 0.86rem;
 }
 
 .stea-heading {
@@ -160,6 +177,19 @@ a {
   border-radius: 8px;
   color: #25221d;
   background: #fffaf1;
+}
+
+.stea-avatar-btn {
+  display: inline-grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid #315c4d;
+  border-radius: 999px;
+  color: #fffaf1;
+  background: #315c4d;
+  font-size: 0.95rem;
+  font-weight: 850;
 }
 
 .stea-btn-primary {
@@ -269,9 +299,9 @@ a {
 .stea-search {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 54px;
-  padding: 0 16px;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 10px;
   border: 1px solid #ded5c6;
   border-radius: 8px;
   background: #fffaf1;
@@ -315,21 +345,57 @@ a {
 .stea-chip-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
+}
+
+.stea-ticker-chip-row {
+  width: 100%;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.stea-ticker-chip-row::-webkit-scrollbar {
+  display: none;
+}
+
+.stea-ticker-chip-row .stea-chip {
+  flex: 0 0 auto;
 }
 
 .stea-chip {
-  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
   border: 1px solid #ded5c6;
   border-radius: 8px;
-  padding: 0 10px;
+  padding: 0 8px;
   color: #25221d;
   background: #fffdf8;
+  font-size: 0.82rem;
   font-weight: 750;
 }
 
-.stea-chip-asset {
+.stea-chip-ticker {
+  border-color: color-mix(in srgb, var(--stea-chip-color) 70%, #786f63);
+  color: color-mix(in srgb, var(--stea-chip-color) 72%, #25221d);
+  background: #fffdf8;
   font-weight: 900;
+}
+
+.stea-chip-ticker.stea-chip-active {
+  border-color: color-mix(in srgb, var(--stea-chip-color) 80%, #25221d);
+  color: #25221d;
+  background: color-mix(in srgb, var(--stea-chip-color) 72%, #fffdf8);
+}
+
+.stea-chip-asset-mark {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
 }
 
 .stea-chip-active {
@@ -438,6 +504,116 @@ a {
   height: 260px;
   color: #315c4d;
   border-block: 1px solid #ece3d7;
+}
+
+.stea-chart-target-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.stea-chart-target-x,
+.stea-chart-target-y,
+.stea-chart-target-dot,
+.stea-chart-target-label,
+.stea-chart-target-interval,
+.stea-chart-target-change {
+  position: absolute;
+  pointer-events: none;
+}
+
+.stea-chart-target-interval {
+  top: 0;
+  bottom: 0;
+  background: rgba(49, 92, 77, 0.12);
+}
+
+.stea-chart-target-x {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(37, 34, 29, 0.5);
+}
+
+.stea-chart-target-x-anchor {
+  background: rgba(37, 34, 29, 0.72);
+}
+
+.stea-chart-target-y {
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: rgba(37, 34, 29, 0.5);
+}
+
+.stea-chart-target-y-anchor {
+  background: rgba(37, 34, 29, 0.38);
+}
+
+.stea-chart-target-dot {
+  width: 9px;
+  height: 9px;
+  border: 2px solid #fffaf1;
+  border-radius: 999px;
+  background: #25221d;
+  box-shadow: 0 1px 4px rgba(37, 34, 29, 0.24);
+  transform: translate(-50%, -50%);
+}
+
+.stea-chart-target-dot-anchor {
+  background: #fffaf1;
+  border-color: #25221d;
+}
+
+.stea-chart-target-change {
+  top: -24px;
+  left: 50%;
+  max-width: 220px;
+  border-radius: 6px;
+  padding: 3px 6px;
+  background: rgba(255, 250, 241, 0.94);
+  box-shadow: 0 1px 4px rgba(37, 34, 29, 0.16);
+  font-size: 0.72rem;
+  line-height: 1.2;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.stea-chart-target-label {
+  max-width: 120px;
+  border-radius: 6px;
+  padding: 3px 6px;
+  overflow: hidden;
+  color: #fffaf1;
+  background: rgba(37, 34, 29, 0.88);
+  font-size: 0.72rem;
+  font-weight: 750;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stea-chart-target-label-x {
+  bottom: 4px;
+  transform: translateX(-50%);
+}
+
+.stea-chart-target-price-label {
+  left: 4px;
+  transform: none;
+}
+
+.stea-chart-target-price-label-above {
+  transform: translateY(calc(-100% - 8px));
+}
+
+.stea-chart-target-price-label-below {
+  transform: translateY(8px);
 }
 
 .stea-chart-marker {
@@ -591,9 +767,9 @@ a {
 
 .stea-badge {
   border-radius: 8px;
-  padding: 4px 8px;
+  padding: 3px 7px;
   color: #fffaf1;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 800;
   text-transform: uppercase;
 }
@@ -651,6 +827,17 @@ a {
   box-shadow: 0 24px 80px rgba(37, 34, 29, 0.26);
 }
 
+.stea-account-modal {
+  display: grid;
+  width: min(100%, 360px);
+  gap: 16px;
+  border: 1px solid #ded5c6;
+  border-radius: 8px;
+  padding: 16px;
+  background: #fffaf1;
+  box-shadow: 0 24px 80px rgba(37, 34, 29, 0.26);
+}
+
 .stea-modal-header,
 .stea-modal-actions {
   display: flex;
@@ -661,6 +848,30 @@ a {
 
 .stea-modal-actions {
   justify-content: flex-end;
+}
+
+.stea-account-details {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.stea-account-details div {
+  display: grid;
+  gap: 3px;
+}
+
+.stea-account-details dt {
+  color: #786f63;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.stea-account-details dd {
+  margin: 0;
+  color: #25221d;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 560px) {
