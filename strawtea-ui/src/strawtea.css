@@ -179,6 +179,11 @@ a {
   background: #fffaf1;
 }
 
+.stea-icon-btn-sm {
+  width: 30px;
+  height: 30px;
+}
+
 .stea-avatar-btn {
   display: inline-grid;
   width: 40px;
@@ -634,6 +639,30 @@ a {
   background: #8a4b32;
 }
 
+.stea-chart-report-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--stea-report-color) 78%, #25221d);
+  opacity: 0.58;
+  pointer-events: none;
+}
+
+.stea-chart-report-label {
+  position: absolute;
+  top: 4px;
+  left: 3px;
+  border-radius: 4px;
+  padding: 1px 3px;
+  color: #25221d;
+  background: rgba(255, 250, 241, 0.82);
+  font-size: 0.58rem;
+  font-weight: 900;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
 .stea-legend {
   display: flex;
   flex-wrap: wrap;
@@ -696,6 +725,10 @@ a {
   background: #fffdf8;
 }
 
+.stea-assets-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .stea-stat-grid dt {
   color: #786f63;
   font-size: 0.78rem;
@@ -744,6 +777,19 @@ a {
   border-bottom: 0;
 }
 
+.stea-table tbody tr.selected td {
+  background: #fffdf8;
+}
+
+.stea-ticker-trigger {
+  border: 0;
+  padding: 0;
+  color: #25221d;
+  background: transparent;
+  font-weight: 900;
+  text-align: left;
+}
+
 .stea-table-empty {
   color: #786f63;
   text-align: center;
@@ -765,6 +811,38 @@ a {
   white-space: normal;
 }
 
+.stea-watchlist-table {
+  min-width: 1480px;
+}
+
+.stea-watchlist-table th,
+.stea-watchlist-table td {
+  white-space: nowrap;
+}
+
+.stea-watchlist-table th:nth-child(2),
+.stea-watchlist-table td:nth-child(2),
+.stea-watchlist-table th:nth-child(10),
+.stea-watchlist-table td:nth-child(10) {
+  text-align: left;
+}
+
+.stea-watchlist-table td:nth-child(2),
+.stea-watchlist-table td:nth-child(10) {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stea-cell-clip {
+  display: block;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .stea-badge {
   border-radius: 8px;
   padding: 3px 7px;
@@ -782,10 +860,153 @@ a {
   background: #8a4b32;
 }
 
+.stea-screener-header {
+  align-items: flex-end;
+}
+
+.stea-screener-filters {
+  grid-template-columns: 1.5fr repeat(3, minmax(130px, 1fr));
+}
+
+.stea-status-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stea-screener-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.stea-analysis-modal {
+  width: min(100%, 1040px);
+}
+
+.stea-analysis-modal-toolbar {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.stea-analysis-range-row {
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.stea-analysis-range-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.stea-screener-table {
+  min-width: 1180px;
+  font-size: 0.86rem;
+}
+
+.stea-screener-table th,
+.stea-screener-table td {
+  padding: 10px;
+}
+
+.stea-run-caption-row td {
+  text-align: left;
+  color: #5f574d;
+  background: #fffdf8;
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.stea-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 8px;
+  padding: 0 8px;
+  color: #fffaf1;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.stea-status-entry-candidate {
+  background: #315c4d;
+}
+
+.stea-status-watch {
+  background: #6d5b2c;
+}
+
+.stea-status-rejected {
+  background: #8a4b32;
+}
+
+.stea-status-ignore {
+  background: #786f63;
+}
+
+.stea-screener-detail {
+  display: grid;
+  gap: 16px;
+  border: 1px solid #ded5c6;
+  border-radius: 8px;
+  padding: 16px;
+  background: #fffaf1;
+}
+
+.stea-detail-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #38322b;
+  line-height: 1.45;
+}
+
+.stea-override-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 12px;
+  background: #fffdf8;
+}
+
 .stea-note {
   margin: 0;
   color: #5f574d;
   line-height: 1.45;
+}
+
+.stea-watchlist-notes {
+  display: grid;
+  gap: 10px;
+}
+
+.stea-watchlist-note {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #ded5c6;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fffdf8;
+}
+
+.stea-watchlist-note p {
+  margin: 0;
+  color: #25221d;
+  line-height: 1.45;
+}
+
+.stea-watchlist-note span {
+  color: #786f63;
+  font-size: 0.85rem;
+}
+
+.stea-analysis-notes {
+  display: grid;
+  gap: 12px;
 }
 
 .stea-empty {
@@ -825,6 +1046,76 @@ a {
   padding: 16px;
   background: #fffaf1;
   box-shadow: 0 24px 80px rgba(37, 34, 29, 0.26);
+}
+
+.stea-profile-modal {
+  width: min(100%, 780px);
+}
+
+.stea-profile-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.stea-profile-grid dd {
+  overflow-wrap: anywhere;
+}
+
+.stea-profile-address-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.stea-profile-address-grid section {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid #ece3d7;
+  border-radius: 8px;
+  background: #fffdf8;
+}
+
+.stea-financial-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(142px, 1fr));
+  gap: 10px;
+}
+
+.stea-financial-item {
+  display: grid;
+  gap: 4px;
+  min-height: 112px;
+  align-content: start;
+  border: 1px solid #ece3d7;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fffdf8;
+}
+
+.stea-financial-item strong {
+  color: #25221d;
+  font-size: 1.08rem;
+}
+
+.stea-financial-item span,
+.stea-financial-item small {
+  color: #786f63;
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
+.stea-financial-label {
+  margin: 0;
+  color: #5f574d;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.stea-profile-filing {
+  color: inherit;
+  text-decoration: none;
 }
 
 .stea-account-modal {
@@ -885,7 +1176,13 @@ a {
 
   .stea-list-row,
   .stea-form-grid,
-  .stea-stat-grid {
+  .stea-screener-filters,
+  .stea-stat-grid,
+  .stea-profile-address-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stea-screener-layout {
     grid-template-columns: 1fr;
   }
 
@@ -894,6 +1191,15 @@ a {
   .stea-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .stea-analysis-range-row {
+    align-items: flex-start;
+    flex-direction: row;
+  }
+
+  .stea-analysis-range-actions {
+    align-self: flex-end;
   }
 
   .stea-btn-fit {

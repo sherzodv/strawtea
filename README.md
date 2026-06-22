@@ -35,9 +35,10 @@ The backend loads non-secret values from `strawtea-be/.env`. Keep the Twelve Dat
 
 ```bash
 export STRAWTEA_TWELVE_API_KEY=...
+export STRAWTEA_SEC_USER_AGENT="strawtea/0.1 your-email@example.com"
 ```
 
-`TWELVE_DATA_API_KEY` is also accepted as a fallback.
+`TWELVE_DATA_API_KEY` is also accepted as a fallback. `STRAWTEA_SEC_USER_AGENT` should identify the app and include contact info because SEC EDGAR filters anonymous automated requests.
 
 Health check:
 

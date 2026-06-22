@@ -1,7 +1,7 @@
 import { getSettingValue, putSettingValue } from './api';
 import type { InvestlogPerformanceRange } from './api';
 
-export type InvestlogTab = 'assets' | 'analysis' | 'history';
+export type InvestlogTab = 'assets' | 'analysis' | 'screener' | 'watchlist' | 'history';
 
 export type AnalysisIntervalSetting = {
   anchorDate: string | null;
@@ -21,7 +21,7 @@ export type InvestlogAnalysisSettings = {
   tickerHistory?: string[];
 };
 
-class SyncedSetting<T extends Record<string, unknown>> {
+class SyncedSetting<T extends object> {
   private readonly localKey: string;
 
   constructor(

@@ -98,6 +98,36 @@
       y: number;
     }
   >;
+  $: reportEventPoints = performance.report_events
+    .map((event) => {
+      const series = performance.series.find((item) => item.ticker === event.ticker);
+      if (!series || series.points.length === 0) {
+        return null;
+      }
+
+      const index = series.points.findIndex((point) => point.date >= event.date);
+      const point = series.points[index < 0 ? series.points.length - 1 : index];
+
+      if (!point) {
+        return null;
+      }
+
+      return {
+        ...event,
+        x: xForPoint(series.points, point.date),
+        color: colorForSeries(event.ticker, performance.series.indexOf(series))
+      };
+    })
+    .filter(Boolean) as Array<
+    {
+      ticker: string;
+      date: string;
+      form: '10-K' | '10-Q';
+      filing_date: string | null;
+      x: number;
+      color: string;
+    }
+  >;
 
   function linePoints(points: Array<{ date: string; index: number }>) {
     return points
@@ -137,6 +167,14 @@
 
   function isAssetTicker(ticker: string) {
     return assetTickers.includes(ticker);
+  }
+
+  function reportFormLabel(form: '10-K' | '10-Q') {
+    return form === '10-K' ? 'Y' : 'Q';
+  }
+
+  function reportFormDescription(form: '10-K' | '10-Q') {
+    return form === '10-K' ? 'yearly' : 'quarter';
   }
 
   function pointForEvent(event: PointerEvent) {
@@ -268,6 +306,22 @@
           role="img"
         >
           <span class="stea-sr-only">{event.op.toUpperCase()} {event.date}: {formatMoney(event.price)} - {event.notes}</span>
+        </span>
+      {/each}
+      {#each reportEventPoints as event}
+        <span
+          class="stea-chart-report-line"
+          style={`left: ${event.x}%; --stea-report-color: ${event.color};`}
+          aria-label={`${event.ticker} ${reportFormDescription(event.form)} report date ${event.date}`}
+          role="img"
+        >
+          <span class="stea-chart-report-label">{reportFormLabel(event.form)}</span>
+          <span class="stea-sr-only">
+            {event.ticker} {reportFormDescription(event.form)} report date {event.date}
+            {#if event.filing_date}
+              filed {event.filing_date}
+            {/if}
+          </span>
         </span>
       {/each}
       <button

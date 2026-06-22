@@ -8,36 +8,53 @@
 </script>
 
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { Search } from '@lucide/svelte';
   import { chartColorForAssetIndex } from './chartColors';
 
   export let label = 'Ticker';
   export let selected: string[] = [];
   export let assetTickers: string[] = [];
+  export let watchlistTickers: string[] = [];
   export let history: string[] = [];
   export let search: (query: string) => Promise<TickerPickerOption[]> = async () => [];
   export let onSelect: (ticker: string) => void = () => {};
   export let onRemove: (ticker: string) => void = () => {};
   export let onHistoryChange: (tickers: string[]) => void = () => {};
+  export let onProfile: (ticker: string) => void = () => {};
 
   let query = '';
   let results: TickerPickerOption[] = [];
   let isSearching = false;
   let searchTimer: number | undefined;
+  const tapTimers = new Map<string, number>();
+  const doubleTapMs = 280;
 
   $: normalizedAssetTickers = uniqueSymbols(assetTickers);
+  $: normalizedWatchlistTickers = uniqueSymbols(watchlistTickers);
   $: visibleRecentTickers = history.filter(
     (ticker) =>
       !selected.includes(ticker) &&
-      !normalizedAssetTickers.includes(ticker)
+      !normalizedAssetTickers.includes(ticker) &&
+      !normalizedWatchlistTickers.includes(ticker)
   );
   $: visibleTickers = [
     ...normalizedAssetTickers,
-    ...selected.filter((ticker) => !normalizedAssetTickers.includes(ticker)),
+    ...selected.filter(
+      (ticker) =>
+        !normalizedAssetTickers.includes(ticker) &&
+        !normalizedWatchlistTickers.includes(ticker)
+    ),
     ...visibleRecentTickers
   ];
 
   $: scheduleSearch(query);
+
+  onDestroy(() => {
+    window.clearTimeout(searchTimer);
+    tapTimers.forEach((timer) => window.clearTimeout(timer));
+    tapTimers.clear();
+  });
 
   function scheduleSearch(value: string) {
     window.clearTimeout(searchTimer);
@@ -82,6 +99,24 @@
     choose(ticker);
   }
 
+  function handleTickerPress(ticker: string, singleAction: () => void) {
+    const normalized = ticker.trim().toUpperCase();
+    const existingTimer = tapTimers.get(normalized);
+
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+      tapTimers.delete(normalized);
+      onProfile(normalized);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      tapTimers.delete(normalized);
+      singleAction();
+    }, doubleTapMs);
+    tapTimers.set(normalized, timer);
+  }
+
   function uniqueSymbols(items: string[]) {
     return Array.from(
       new Set(items.map((item) => item.trim().toUpperCase()).filter(Boolean))
@@ -105,6 +140,26 @@
   </label>
 
   <div class="stea-picker-body">
+    {#if normalizedWatchlistTickers.length > 0}
+      <section class="stea-picker-section">
+        <p class="stea-picker-heading">Watchlist</p>
+        <div class="stea-chip-row stea-ticker-chip-row">
+          {#each normalizedWatchlistTickers as ticker, index}
+            <button
+              class="stea-chip stea-chip-ticker"
+              class:stea-chip-active={selected.includes(ticker)}
+              type="button"
+              style={`--stea-chip-color: ${chartColorForAssetIndex(index + normalizedAssetTickers.length)}`}
+              aria-pressed={selected.includes(ticker)}
+              on:click={() => handleTickerPress(ticker, () => toggleTicker(ticker))}
+            >
+              {ticker}
+            </button>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
     {#if visibleTickers.length > 0}
       <section class="stea-picker-section">
         <p class="stea-picker-heading">Tickers</p>
@@ -116,7 +171,7 @@
               type="button"
               style={`--stea-chip-color: ${chartColorForAssetIndex(index)}`}
               aria-pressed={selected.includes(ticker)}
-              on:click={() => toggleTicker(ticker)}
+              on:click={() => handleTickerPress(ticker, () => toggleTicker(ticker))}
             >
               {#if normalizedAssetTickers.includes(ticker)}
                 <span class="stea-chip-asset-mark" aria-hidden="true"></span>
@@ -135,7 +190,11 @@
         <p class="stea-picker-heading">Search results</p>
         <div class="stea-list">
           {#each results as result}
-            <button class="stea-list-row" type="button" on:click={() => choose(result.symbol)}>
+            <button
+              class="stea-list-row"
+              type="button"
+              on:click={() => handleTickerPress(result.symbol, () => choose(result.symbol))}
+            >
               <strong>{result.symbol}</strong>
               <span class="stea-list-row-text">{optionSubtitle(result) || result.symbol}</span>
             </button>

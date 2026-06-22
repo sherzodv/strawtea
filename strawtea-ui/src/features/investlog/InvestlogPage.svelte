@@ -1,16 +1,28 @@
 <script lang="ts">
-  import { BookOpen, Plus } from '@lucide/svelte';
-  import { onMount } from 'svelte';
+  import { BookOpen, ExternalLink, MessageSquare, Pencil, Plus, Star, StarOff } from '@lucide/svelte';
+  import { onDestroy, onMount } from 'svelte';
   import {
+    addInvestlogWatchlistItem,
     createInvestlogEntry,
+    createInvestlogTickerNote,
+    fetchCompanyProfile,
     fetchInvestlogPerformance,
     listInvestlogAssets,
     listInvestlogEntries,
+    listInvestlogWatchlist,
+    removeInvestlogWatchlistItem,
     searchTickers,
+    updateInvestlogEntry,
+    type CompanyAddress,
+    type CompanyFinancialMetric,
+    type CompanyProfile,
     type InvestlogAsset,
+    type InvestlogAssetsSummary,
     type InvestlogEntry,
     type InvestlogPerformance,
-    type InvestlogPerformanceRange
+    type InvestlogPerformanceRange,
+    type InvestlogTickerNote,
+    type InvestlogWatchlistItem
   } from '../../lib/api';
   import {
     appSettings,
@@ -18,11 +30,20 @@
     type InvestlogAnalysisSettings,
     type InvestlogTab
   } from '../../lib/settings';
+  import AiCorrectionsPage from '../ai-corrections/AiCorrectionsPage.svelte';
   import PerformanceChart from './PerformanceChart.svelte';
   import TickerPicker from './TickerPicker.svelte';
 
+  type TickerNotesView = {
+    ticker: string;
+    company_name: string | null;
+    notes: InvestlogTickerNote[];
+  };
+
   let entries: InvestlogEntry[] = [];
   let assets: InvestlogAsset[] = [];
+  let assetsSummary: InvestlogAssetsSummary | null = null;
+  let watchlist: InvestlogWatchlistItem[] = [];
   let ticker = '';
   let occurredAt = defaultLocalDateTime();
   let op: 'buy' | 'sell' = 'buy';
@@ -35,12 +56,21 @@
   let isLoading = true;
   let isLoadingPerformance = false;
   let isModalOpen = false;
+  let editingEntryId: string | null = null;
+  let isProfileModalOpen = false;
+  let selectedTickerNotes: TickerNotesView | null = null;
+  let isLoadingProfile = false;
+  let profileError = '';
+  let companyProfile: CompanyProfile | null = null;
   let selectedAnalysisTickers: string[] = [];
   let recentAnalysisTickers: string[] = [];
   let performanceRange: InvestlogPerformanceRange = '6m';
   let analysisInterval: AnalysisIntervalSetting | null = null;
   let performance: InvestlogPerformance | null = null;
   let activeTab: InvestlogTab = 'assets';
+  let profileRequestId = 0;
+  const profileTapTimers = new Map<string, number>();
+  const doubleTapMs = 280;
   const performanceRanges: Array<{ value: InvestlogPerformanceRange; label: string }> = [
     { value: '1m', label: '1M' },
     { value: '3m', label: '3M' },
@@ -51,9 +81,25 @@
 
   $: notesLabel = op === 'buy' ? 'Justify why you bought this' : 'Justify why you sold this';
   $: assetTickers = assets.map((asset) => asset.ticker);
+  $: activeWatchlistTickers = watchlist
+    .filter((item) => item.is_active)
+    .map((item) => item.ticker);
+  $: selectedTickerNotesForAnalysis = selectedAnalysisTickers.map((ticker) => {
+    const watchlistItem = watchlist.find((item) => item.ticker === ticker);
+    return {
+      ticker,
+      company_name: watchlistItem?.company_name ?? null,
+      notes: performance?.ticker_notes.filter((note) => note.ticker === ticker) ?? []
+    };
+  });
   $: analysisColorTickers = [
     ...assetTickers,
-    ...selectedAnalysisTickers.filter((ticker) => !assetTickers.includes(ticker))
+    ...activeWatchlistTickers.filter((ticker) => !assetTickers.includes(ticker)),
+    ...selectedAnalysisTickers.filter(
+      (ticker) =>
+        !assetTickers.includes(ticker) &&
+        !activeWatchlistTickers.includes(ticker)
+    )
   ];
   $: draftPrice = parseDecimal(price);
   $: draftQuantity = parseDecimal(quantity);
@@ -63,16 +109,28 @@
 
   onMount(loadInvestlog);
 
+  onDestroy(() => {
+    profileTapTimers.forEach((timer) => window.clearTimeout(timer));
+    profileTapTimers.clear();
+  });
+
   async function loadInvestlog() {
     isLoading = true;
     error = '';
 
     try {
-      const [pageSettings, analysisSettings, loadedEntries, loadedAssets] = await Promise.all([
+      const [
+        pageSettings,
+        analysisSettings,
+        loadedEntries,
+        loadedAssets,
+        loadedWatchlist
+      ] = await Promise.all([
         appSettings.investlog.page.load(),
         appSettings.investlog.analysis.load(),
         listInvestlogEntries(),
-        listInvestlogAssets()
+        listInvestlogAssets(),
+        listInvestlogWatchlist()
       ]);
 
       activeTab = normalizeTab(pageSettings.activeTab);
@@ -85,7 +143,9 @@
       performanceRange = normalizePerformanceRange(analysisSettings.range);
       analysisInterval = normalizeInterval(analysisSettings.interval);
       entries = loadedEntries;
-      assets = loadedAssets;
+      assets = loadedAssets.assets;
+      assetsSummary = loadedAssets.summary;
+      watchlist = loadedWatchlist;
 
       if (selectedAnalysisTickers.length === 0 && assets[0]) {
         selectedAnalysisTickers = [assets[0].ticker];
@@ -126,9 +186,16 @@
         throw new Error('Notes are required');
       }
 
-      const created = await createInvestlogEntry(payload);
-      entries = [created, ...entries];
-      assets = await listInvestlogAssets();
+      if (editingEntryId) {
+        await updateInvestlogEntry(editingEntryId, payload);
+        entries = await listInvestlogEntries();
+      } else {
+        const created = await createInvestlogEntry(payload);
+        entries = [created, ...entries];
+      }
+      const loadedAssets = await listInvestlogAssets();
+      assets = loadedAssets.assets;
+      assetsSummary = loadedAssets.summary;
       if (selectedAnalysisTickers.length === 0 && assets[0]) {
         selectedAnalysisTickers = [assets[0].ticker];
         saveAnalysisSettings();
@@ -172,6 +239,28 @@
     return `${amount} $`;
   }
 
+  function formatCompactMoney(value: number | null) {
+    if (value == null) return '-';
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: 'USD',
+      notation: 'compact',
+      maximumFractionDigits: 1
+    }).format(value / 100);
+  }
+
+  function formatShares(value: number | null) {
+    if (value == null) return '-';
+    return new Intl.NumberFormat(undefined, {
+      notation: 'compact',
+      maximumFractionDigits: 1
+    }).format(value);
+  }
+
+  function formatOptionalMoney(value: number | null) {
+    return value == null ? '-' : formatMoney(value);
+  }
+
   function formatQuantity(value: number) {
     return (value / 100).toLocaleString(undefined, {
       minimumFractionDigits: 0,
@@ -202,14 +291,86 @@
     return `${amount} $`;
   }
 
+  function formatInputAmount(value: number, scale = 100) {
+    return (value / scale).toLocaleString('en-US', {
+      useGrouping: false,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2
+    });
+  }
+
   function openModal() {
     resetForm();
+    isModalOpen = true;
+  }
+
+  function openEditEntry(entry: InvestlogEntry) {
+    editingEntryId = entry.id;
+    ticker = entry.ticker;
+    occurredAt = toLocalDateTimeInputValue(new Date(entry.occurred_at));
+    op = entry.op;
+    price = formatInputAmount(entry.price);
+    quantity = formatInputAmount(entry.quantity);
+    fees = formatInputAmount(entry.fees);
+    notes = entry.notes;
+    error = '';
     isModalOpen = true;
   }
 
   function closeModal() {
     isModalOpen = false;
     resetForm();
+  }
+
+  async function openCompanyProfile(ticker: string) {
+    const normalized = ticker.trim().toUpperCase();
+    if (!normalized) {
+      return;
+    }
+
+    const requestId = ++profileRequestId;
+    isProfileModalOpen = true;
+    isLoadingProfile = true;
+    profileError = '';
+    companyProfile = null;
+
+    try {
+      const profile = await fetchCompanyProfile(normalized);
+      if (requestId === profileRequestId) {
+        companyProfile = profile;
+      }
+    } catch (err) {
+      if (requestId === profileRequestId) {
+        profileError = err instanceof Error ? err.message : 'Could not load company profile';
+      }
+    } finally {
+      if (requestId === profileRequestId) {
+        isLoadingProfile = false;
+      }
+    }
+  }
+
+  function closeCompanyProfile() {
+    isProfileModalOpen = false;
+    profileError = '';
+    companyProfile = null;
+  }
+
+  function handleTickerProfileTap(ticker: string) {
+    const normalized = ticker.trim().toUpperCase();
+    const existingTimer = profileTapTimers.get(normalized);
+
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+      profileTapTimers.delete(normalized);
+      openCompanyProfile(normalized);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      profileTapTimers.delete(normalized);
+    }, doubleTapMs);
+    profileTapTimers.set(normalized, timer);
   }
 
   function resetForm() {
@@ -220,6 +381,7 @@
     quantity = '';
     fees = '0';
     notes = '';
+    editingEntryId = null;
     error = '';
   }
 
@@ -247,8 +409,100 @@
     })}%`;
   }
 
+  function formatDate(value: string | null) {
+    if (!value) return '-';
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short'
+    }).format(new Date(value));
+  }
+
+  function formatNoteCount(count: number) {
+    return `${count.toLocaleString()} ${count === 1 ? 'note' : 'notes'}`;
+  }
+
   function formatDays(value: number) {
     return value.toLocaleString();
+  }
+
+  function formatFiscalYearEnd(value: string | null) {
+    if (!value || value.length !== 4) {
+      return value;
+    }
+
+    return `${value.slice(0, 2)}/${value.slice(2)}`;
+  }
+
+  function addressLines(address: CompanyAddress | null) {
+    if (!address) {
+      return [];
+    }
+
+    return [
+      address.street1,
+      address.street2,
+      [address.city, address.state_or_country, address.zip_code].filter(Boolean).join(', ')
+    ].filter(Boolean);
+  }
+
+  function joinValues(values: string[]) {
+    return values.length > 0 ? values.join(', ') : '—';
+  }
+
+  function formatFinancialValue(metric: CompanyFinancialMetric) {
+    if (metric.unit === 'USD') {
+      return formatLargeUsd(metric.value);
+    }
+
+    if (metric.unit === 'USD/shares') {
+      return `$${metric.value.toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      })}`;
+    }
+
+    if (metric.unit === 'shares') {
+      return formatLargeNumber(metric.value);
+    }
+
+    return metric.value.toLocaleString();
+  }
+
+  function formatLargeUsd(value: number) {
+    return `$${formatLargeNumber(value)}`;
+  }
+
+  function formatLargeNumber(value: number) {
+    const absolute = Math.abs(value);
+    const sign = value < 0 ? '-' : '';
+
+    if (absolute >= 1_000_000_000_000) {
+      return `${sign}${(absolute / 1_000_000_000_000).toLocaleString(undefined, {
+        maximumFractionDigits: 2
+      })}T`;
+    }
+
+    if (absolute >= 1_000_000_000) {
+      return `${sign}${(absolute / 1_000_000_000).toLocaleString(undefined, {
+        maximumFractionDigits: 2
+      })}B`;
+    }
+
+    if (absolute >= 1_000_000) {
+      return `${sign}${(absolute / 1_000_000).toLocaleString(undefined, {
+        maximumFractionDigits: 2
+      })}M`;
+    }
+
+    return value.toLocaleString(undefined, {
+      maximumFractionDigits: 2
+    });
+  }
+
+  function metricPeriod(metric: CompanyFinancialMetric) {
+    return [metric.form, metric.fiscal_year, metric.fiscal_period, metric.end]
+      .filter(Boolean)
+      .join(' · ');
   }
 
   function changeClass(value: number) {
@@ -280,6 +534,147 @@
     analysisInterval = null;
     saveAnalysisSettings();
     loadPerformance();
+  }
+
+  async function addToWatchlist(ticker: string) {
+    const normalized = ticker.trim().toUpperCase();
+    if (!normalized) return;
+
+    const note = window.prompt(`Why add ${normalized} to watchlist?`);
+    if (note === null) return;
+    if (!note.trim()) {
+      error = 'Watchlist note is required';
+      return;
+    }
+
+    error = '';
+    try {
+      await addInvestlogWatchlistItem({ ticker: normalized, note });
+      watchlist = await listInvestlogWatchlist();
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Could not add to watchlist';
+    }
+  }
+
+  async function removeFromWatchlist(ticker: string) {
+    const normalized = ticker.trim().toUpperCase();
+    if (!normalized) return;
+
+    const note = window.prompt(`Why remove ${normalized} from watchlist?`);
+    if (note === null) return;
+    if (!note.trim()) {
+      error = 'Watchlist removal note is required';
+      return;
+    }
+
+    error = '';
+    try {
+      await removeInvestlogWatchlistItem(normalized, { note });
+      watchlist = await listInvestlogWatchlist();
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Could not remove from watchlist';
+    }
+  }
+
+  function watchlistActionLabel(ticker: string) {
+    return activeWatchlistTickers.includes(ticker) ? 'Remove watchlist' : 'Add watchlist';
+  }
+
+  function toggleWatchlist(ticker: string) {
+    if (activeWatchlistTickers.includes(ticker)) {
+      removeFromWatchlist(ticker);
+      return;
+    }
+
+    addToWatchlist(ticker);
+  }
+
+  function openTickerNotes(item: TickerNotesView) {
+    selectedTickerNotes = item;
+  }
+
+  function closeTickerNotes() {
+    selectedTickerNotes = null;
+  }
+
+  function watchlistTickerNotesView(item: InvestlogWatchlistItem): TickerNotesView {
+    return {
+      ticker: item.ticker,
+      company_name: item.company_name,
+      notes: item.notes
+    };
+  }
+
+  async function addTickerNote(ticker: string) {
+    const normalized = ticker.trim().toUpperCase();
+    if (!normalized) return;
+
+    const note = window.prompt(`Add note for ${normalized}`);
+    if (note === null) return;
+    if (!note.trim()) {
+      error = 'Ticker note is required';
+      return;
+    }
+
+    error = '';
+    try {
+      const created = await createInvestlogTickerNote({ ticker: normalized, note });
+      applyTickerNote(created);
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Could not add ticker note';
+    }
+  }
+
+  function addSelectedTickerNote() {
+    if (!selectedTickerNotes) return;
+    addTickerNote(selectedTickerNotes.ticker);
+  }
+
+  function applyTickerNote(note: InvestlogTickerNote) {
+    watchlist = watchlist.map((item) =>
+      item.ticker === note.ticker ? { ...item, notes: [note, ...item.notes] } : item
+    );
+
+    if (performance && performance.tickers.includes(note.ticker)) {
+      performance = {
+        ...performance,
+        ticker_notes: [
+          note,
+          ...performance.ticker_notes.filter((item) => item.id !== note.id)
+        ]
+      };
+    }
+
+    if (selectedTickerNotes?.ticker === note.ticker) {
+      selectedTickerNotes = {
+        ...selectedTickerNotes,
+        notes: [note, ...selectedTickerNotes.notes]
+      };
+    }
+  }
+
+  async function addSelectedToWatchlist() {
+    const tickers = selectedAnalysisTickers.filter(
+      (ticker) => !activeWatchlistTickers.includes(ticker)
+    );
+    if (tickers.length === 0) return;
+
+    const note = window.prompt(`Why add ${tickers.join(', ')} to watchlist?`);
+    if (note === null) return;
+    if (!note.trim()) {
+      error = 'Watchlist note is required';
+      return;
+    }
+
+    error = '';
+    try {
+      for (const ticker of tickers) {
+        await addInvestlogWatchlistItem({ ticker, note });
+      }
+      watchlist = await listInvestlogWatchlist();
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Could not add selected tickers to watchlist';
+    }
   }
 
   function setAnalysisTickerHistory(tickers: string[]) {
@@ -321,7 +716,12 @@
   }
 
   function normalizeTab(value: string): InvestlogTab {
-    return value === 'analysis' || value === 'history' ? value : 'assets';
+    return value === 'analysis' ||
+      value === 'screener' ||
+      value === 'watchlist' ||
+      value === 'history'
+      ? value
+      : 'assets';
   }
 
   function normalizePerformanceRange(value: string): InvestlogPerformanceRange {
@@ -360,12 +760,12 @@
 
 <section class="stea-stack-lg">
   {#if isModalOpen}
-    <div class="stea-modal-backdrop">
-      <div class="stea-modal" role="dialog" aria-modal="true" aria-labelledby="investlog-modal-title" tabindex="-1">
+    <div class="stea-modal-backdrop" role="presentation" on:pointerdown={closeModal}>
+      <div class="stea-modal" role="dialog" aria-modal="true" aria-labelledby="investlog-modal-title" tabindex="-1" on:pointerdown|stopPropagation>
         <div class="stea-modal-header">
           <div>
             <p class="stea-eyebrow">Investlog</p>
-            <h2 id="investlog-modal-title" class="stea-heading-sm">Add entry</h2>
+            <h2 id="investlog-modal-title" class="stea-heading-sm">{editingEntryId ? 'Edit entry' : 'Add entry'}</h2>
           </div>
           <button class="stea-icon-btn" type="button" aria-label="Close" on:click={closeModal}>×</button>
         </div>
@@ -438,11 +838,180 @@
           <div class="stea-modal-actions stea-span-all">
             <button class="stea-btn-secondary" type="button" on:click={closeModal}>Cancel</button>
             <button class="stea-btn-primary stea-btn-fit" type="submit" disabled={isSaving}>
-              <Plus size={20} />
-              {isSaving ? 'Saving' : 'Save entry'}
+              {#if editingEntryId}
+                <Pencil size={20} />
+              {:else}
+                <Plus size={20} />
+              {/if}
+              {isSaving ? 'Saving' : editingEntryId ? 'Save changes' : 'Save entry'}
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  {/if}
+
+  {#if isProfileModalOpen}
+    <div class="stea-modal-backdrop" role="presentation" on:pointerdown={closeCompanyProfile}>
+      <div class="stea-modal stea-profile-modal" role="dialog" aria-modal="true" aria-labelledby="company-profile-title" tabindex="-1" on:pointerdown|stopPropagation>
+        <div class="stea-modal-header">
+          <div>
+            <p class="stea-eyebrow">SEC EDGAR</p>
+            <h2 id="company-profile-title" class="stea-heading-sm">
+              {companyProfile?.ticker ?? 'Company profile'}
+            </h2>
+          </div>
+          <button class="stea-icon-btn" type="button" aria-label="Close" on:click={closeCompanyProfile}>×</button>
+        </div>
+
+        {#if isLoadingProfile}
+          <p class="stea-muted">Loading company profile</p>
+        {:else if profileError}
+          <p class="stea-error">{profileError}</p>
+        {:else if companyProfile}
+          <div class="stea-stack">
+            <div>
+              <h3 class="stea-heading">{companyProfile.name}</h3>
+              <p class="stea-note">
+                CIK {companyProfile.cik}
+                {#if companyProfile.entity_type}
+                  · {companyProfile.entity_type}
+                {/if}
+              </p>
+            </div>
+
+            <dl class="stea-stat-grid stea-profile-grid">
+              <div>
+                <dt>Exchange</dt>
+                <dd>{joinValues(companyProfile.exchanges)}</dd>
+              </div>
+              <div>
+                <dt>Tickers</dt>
+                <dd>{joinValues(companyProfile.tickers)}</dd>
+              </div>
+              <div>
+                <dt>SIC</dt>
+                <dd>
+                  {#if companyProfile.sic || companyProfile.sic_description}
+                    {[companyProfile.sic, companyProfile.sic_description].filter(Boolean).join(' · ')}
+                  {:else}
+                    —
+                  {/if}
+                </dd>
+              </div>
+              <div>
+                <dt>Fiscal year end</dt>
+                <dd>{formatFiscalYearEnd(companyProfile.fiscal_year_end) ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>State</dt>
+                <dd>{companyProfile.state_of_incorporation ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Phone</dt>
+                <dd>{companyProfile.phone ?? '—'}</dd>
+              </div>
+            </dl>
+
+            <div class="stea-profile-address-grid">
+              <section>
+                <p class="stea-picker-heading">Business address</p>
+                {#if addressLines(companyProfile.business_address).length > 0}
+                  {#each addressLines(companyProfile.business_address) as line}
+                    <p class="stea-note">{line}</p>
+                  {/each}
+                {:else}
+                  <p class="stea-muted">—</p>
+                {/if}
+              </section>
+              <section>
+                <p class="stea-picker-heading">Mailing address</p>
+                {#if addressLines(companyProfile.mailing_address).length > 0}
+                  {#each addressLines(companyProfile.mailing_address) as line}
+                    <p class="stea-note">{line}</p>
+                  {/each}
+                {:else}
+                  <p class="stea-muted">—</p>
+                {/if}
+              </section>
+            </div>
+
+            {#if companyProfile.financials.length > 0}
+              <section class="stea-stack">
+                <p class="stea-picker-heading">Financials</p>
+                <div class="stea-financial-grid">
+                  {#each companyProfile.financials as metric}
+                    <article class="stea-financial-item">
+                      <p class="stea-financial-label">{metric.label}</p>
+                      <strong>{formatFinancialValue(metric)}</strong>
+                      <span>{metricPeriod(metric)}</span>
+                      <small>{metric.concept}</small>
+                    </article>
+                  {/each}
+                </div>
+              </section>
+            {/if}
+
+            {#if companyProfile.recent_filings.length > 0}
+              <section class="stea-stack">
+                <p class="stea-picker-heading">Recent filings</p>
+                <div class="stea-list">
+                  {#each companyProfile.recent_filings as filing}
+                    <a class="stea-list-row stea-profile-filing" href={filing.url ?? companyProfile.sec_url} target="_blank" rel="noreferrer">
+                      <strong>{filing.form}</strong>
+                      <span class="stea-list-row-text">{filing.description ?? filing.primary_document ?? filing.accession_number ?? 'Filing'}</span>
+                      <span class="stea-list-row-meta">{filing.filing_date ?? '—'}</span>
+                    </a>
+                  {/each}
+                </div>
+              </section>
+            {/if}
+
+            <a class="stea-btn-secondary stea-btn-fit" href={companyProfile.sec_url} target="_blank" rel="noreferrer">
+              <ExternalLink size={18} />
+              Open in SEC
+            </a>
+          </div>
+        {/if}
+      </div>
+    </div>
+  {/if}
+
+  {#if selectedTickerNotes}
+    <div class="stea-modal-backdrop" role="presentation" on:pointerdown={closeTickerNotes}>
+      <div class="stea-modal" role="dialog" aria-modal="true" aria-labelledby="watchlist-notes-title" tabindex="-1" on:pointerdown|stopPropagation>
+        <div class="stea-modal-header">
+          <div>
+            <p class="stea-eyebrow">Ticker notes</p>
+            <h2 id="watchlist-notes-title" class="stea-heading-sm">
+              {selectedTickerNotes.ticker}
+              {#if selectedTickerNotes.company_name}
+                · {selectedTickerNotes.company_name}
+              {/if}
+            </h2>
+          </div>
+          <button class="stea-icon-btn" type="button" aria-label="Close" on:click={closeTickerNotes}>×</button>
+        </div>
+
+        {#if selectedTickerNotes.notes.length === 0}
+          <p class="stea-muted">No notes yet.</p>
+        {:else}
+          <div class="stea-watchlist-notes">
+            {#each selectedTickerNotes.notes as note}
+              <article class="stea-watchlist-note">
+                <p>{note.note}</p>
+                <span>{formatDate(note.created_at)}</span>
+              </article>
+            {/each}
+          </div>
+        {/if}
+
+        <div class="stea-modal-actions">
+          <button class="stea-btn-secondary stea-btn-fit" type="button" on:click={addSelectedTickerNote}>
+            <MessageSquare size={18} />
+            Add note
+          </button>
+        </div>
       </div>
     </div>
   {/if}
@@ -467,6 +1036,24 @@
       Analysis
     </button>
     <button
+      class={activeTab === 'screener' ? 'stea-tab stea-tab-active' : 'stea-tab'}
+      type="button"
+      role="tab"
+      aria-selected={activeTab === 'screener'}
+      on:click={() => selectActiveTab('screener')}
+    >
+      Screener
+    </button>
+    <button
+      class={activeTab === 'watchlist' ? 'stea-tab stea-tab-active' : 'stea-tab'}
+      type="button"
+      role="tab"
+      aria-selected={activeTab === 'watchlist'}
+      on:click={() => selectActiveTab('watchlist')}
+    >
+      Watchlist
+    </button>
+    <button
       class={activeTab === 'history' ? 'stea-tab stea-tab-active' : 'stea-tab'}
       type="button"
       role="tab"
@@ -486,9 +1073,39 @@
     <section class="stea-stack" aria-label="Current investment assets">
       {#if isLoading}
         <p class="stea-muted">Loading assets</p>
-      {:else if assets.length === 0}
-        <p class="stea-muted">No current assets.</p>
       {:else}
+        {#if assetsSummary}
+          <dl class="stea-stat-grid stea-stat-strip stea-assets-summary">
+            <div>
+              <dt>Total buys</dt>
+              <dd>{formatMoney(assetsSummary.total_buys)}</dd>
+            </div>
+            <div>
+              <dt>Total sells</dt>
+              <dd>{formatMoney(assetsSummary.total_sells)}</dd>
+            </div>
+            <div>
+              <dt>Commissions</dt>
+              <dd>{formatMoney(assetsSummary.total_commissions)}</dd>
+            </div>
+            <div>
+              <dt>Realized</dt>
+              <dd class={changeClass(assetsSummary.realized_profit)}>{formatMoney(assetsSummary.realized_profit)}</dd>
+            </div>
+            <div>
+              <dt>Unrealized</dt>
+              <dd class={changeClass(assetsSummary.unrealized_profit)}>{formatMoney(assetsSummary.unrealized_profit)}</dd>
+            </div>
+            <div>
+              <dt>Net profit</dt>
+              <dd class={changeClass(assetsSummary.net_profit)}>{formatMoney(assetsSummary.net_profit)}</dd>
+            </div>
+          </dl>
+        {/if}
+
+        {#if assets.length === 0}
+          <p class="stea-muted">No current assets.</p>
+        {:else}
         <div class="stea-table-wrap">
           <table class="stea-table">
             <thead>
@@ -502,12 +1119,17 @@
                 <th>Price</th>
                 <th>Current</th>
                 <th>Price change</th>
+                <th>Watchlist</th>
               </tr>
             </thead>
             <tbody>
               {#each assets as asset}
                 <tr>
-                  <td><strong>{asset.ticker}</strong></td>
+                  <td>
+                    <button class="stea-ticker-trigger" type="button" on:click={() => handleTickerProfileTap(asset.ticker)}>
+                      {asset.ticker}
+                    </button>
+                  </td>
                   <td>{formatDays(asset.days_since_buy_midpoint)}</td>
                   <td class={changeClass(asset.percent_change)}>{formatPercent(asset.percent_change)}</td>
                   <td class={changeClass(asset.amount_change)}>{formatMoney(asset.amount_change)}</td>
@@ -516,11 +1138,27 @@
                   <td>{formatMoney(asset.avg_buy_price)}</td>
                   <td>{formatMoney(asset.current_price)}</td>
                   <td class={changeClass(asset.price_change)}>{formatMoney(asset.price_change)}</td>
+                  <td>
+                    <button
+                      class="stea-icon-btn stea-icon-btn-sm"
+                      type="button"
+                      aria-label={watchlistActionLabel(asset.ticker)}
+                      title={watchlistActionLabel(asset.ticker)}
+                      on:click={() => toggleWatchlist(asset.ticker)}
+                    >
+                      {#if activeWatchlistTickers.includes(asset.ticker)}
+                        <StarOff size={16} />
+                      {:else}
+                        <Star size={16} />
+                      {/if}
+                    </button>
+                  </td>
                 </tr>
               {/each}
             </tbody>
           </table>
         </div>
+        {/if}
       {/if}
     </section>
   {:else if activeTab === 'analysis'}
@@ -529,27 +1167,46 @@
         label=""
         selected={selectedAnalysisTickers}
         assetTickers={assetTickers}
+        watchlistTickers={activeWatchlistTickers}
         history={recentAnalysisTickers}
         search={searchTickers}
         onSelect={addAnalysisTicker}
         onRemove={removeAnalysisTicker}
         onHistoryChange={setAnalysisTickerHistory}
+        onProfile={openCompanyProfile}
       />
 
       <section class="stea-picker-section" aria-label="Analysis range">
-        <p class="stea-picker-heading">Range</p>
-        <div class="stea-chip-row">
-          {#each performanceRanges as range}
-            <button
-              class="stea-chip"
-              class:stea-chip-active={performanceRange === range.value}
-              type="button"
-              aria-pressed={performanceRange === range.value}
-              on:click={() => selectPerformanceRange(range.value)}
-            >
-              {range.label}
-            </button>
-          {/each}
+        <div class="stea-row-between stea-analysis-range-row">
+          <div>
+            <p class="stea-picker-heading">Range</p>
+            <div class="stea-chip-row">
+              {#each performanceRanges as range}
+                <button
+                  class="stea-chip"
+                  class:stea-chip-active={performanceRange === range.value}
+                  type="button"
+                  aria-pressed={performanceRange === range.value}
+                  on:click={() => selectPerformanceRange(range.value)}
+                >
+                  {range.label}
+                </button>
+              {/each}
+            </div>
+          </div>
+          <div class="stea-analysis-range-actions">
+            {#if selectedAnalysisTickers.some((ticker) => !activeWatchlistTickers.includes(ticker))}
+              <button
+                class="stea-icon-btn stea-icon-btn-sm"
+                type="button"
+                aria-label="Add selected tickers to watchlist"
+                title="Add selected to watchlist"
+                on:click={addSelectedToWatchlist}
+              >
+                <Star size={16} />
+              </button>
+            {/if}
+          </div>
         </div>
       </section>
 
@@ -565,6 +1222,140 @@
         />
       {:else}
         <p class="stea-muted">Add a ticker to start analysis.</p>
+      {/if}
+
+      {#if selectedTickerNotesForAnalysis.length > 0}
+        <section class="stea-stack" aria-label="Selected ticker notes">
+          <p class="stea-picker-heading">Ticker notes</p>
+          <div class="stea-analysis-notes">
+            {#each selectedTickerNotesForAnalysis as item}
+              <article class="stea-panel-grid">
+                <div class="stea-row-between">
+                  <button class="stea-ticker-trigger" type="button" on:click={() => openTickerNotes(item)}>
+                    {item.ticker}
+                  </button>
+                  <div class="stea-row">
+                    <span class="stea-note">{formatNoteCount(item.notes.length)}</span>
+                    <button
+                      class="stea-icon-btn stea-icon-btn-sm"
+                      type="button"
+                      aria-label={`Add note for ${item.ticker}`}
+                      title="Add note"
+                      on:click={() => addTickerNote(item.ticker)}
+                    >
+                      <MessageSquare size={16} />
+                    </button>
+                  </div>
+                </div>
+                {#if item.notes.length === 0}
+                  <p class="stea-muted">No notes yet.</p>
+                {:else}
+                  <div class="stea-watchlist-notes">
+                    {#each item.notes as note}
+                      <article class="stea-watchlist-note">
+                        <p>{note.note}</p>
+                        <span>{formatDate(note.created_at)}</span>
+                      </article>
+                    {/each}
+                  </div>
+                {/if}
+              </article>
+            {/each}
+          </div>
+        </section>
+      {/if}
+    </section>
+  {:else if activeTab === 'screener'}
+    <AiCorrectionsPage
+      watchlistTickers={activeWatchlistTickers}
+      onAddToWatchlist={addToWatchlist}
+      onRemoveFromWatchlist={removeFromWatchlist}
+    />
+  {:else if activeTab === 'watchlist'}
+    <section class="stea-stack" aria-label="Investment watchlist">
+      {#if watchlist.length === 0}
+        <p class="stea-muted">No watchlist tickers.</p>
+      {:else}
+        <div class="stea-table-wrap">
+          <table class="stea-table stea-table-readable stea-watchlist-table">
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Company</th>
+                <th>Price</th>
+                <th>Cap</th>
+                <th>Shares</th>
+                <th>Debt</th>
+                <th>Revenue</th>
+                <th>Cash</th>
+                <th>FCF</th>
+                <th>Description</th>
+                <th>Status</th>
+                <th>Notes</th>
+                <th>Meta</th>
+                <th>Price updated</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each watchlist as item}
+                <tr>
+                  <td>
+                    <button class="stea-ticker-trigger" type="button" on:click={() => openTickerNotes(watchlistTickerNotesView(item))}>
+                      {item.ticker}
+                    </button>
+                  </td>
+                  <td><span class="stea-cell-clip">{item.company_name ?? '-'}</span></td>
+                  <td>{formatOptionalMoney(item.current_price)}</td>
+                  <td>{formatCompactMoney(item.market_cap)}</td>
+                  <td>{formatShares(item.shares_outstanding)}</td>
+                  <td>{formatCompactMoney(item.total_debt)}</td>
+                  <td>{formatCompactMoney(item.revenue)}</td>
+                  <td>{formatCompactMoney(item.cash)}</td>
+                  <td>{formatCompactMoney(item.free_cash_flow)}</td>
+                  <td><span class="stea-cell-clip">{item.description ?? '-'}</span></td>
+                  <td>{item.is_active ? 'Active' : 'Removed'}</td>
+                  <td>
+                    <button
+                      class="stea-icon-btn stea-icon-btn-sm"
+                      type="button"
+                      aria-label={`Show ${item.ticker} ticker notes`}
+                      title={formatNoteCount(item.notes.length)}
+                      on:click={() => openTickerNotes(watchlistTickerNotesView(item))}
+                    >
+                      <MessageSquare size={16} />
+                    </button>
+                  </td>
+                  <td>{formatDate(item.meta_fetched_at)}</td>
+                  <td>{formatDate(item.price_fetched_at)}</td>
+                  <td>
+                    {#if item.is_active}
+                      <button
+                        class="stea-icon-btn stea-icon-btn-sm"
+                        type="button"
+                        aria-label={`Remove ${item.ticker} from watchlist`}
+                        title="Remove from watchlist"
+                        on:click={() => removeFromWatchlist(item.ticker)}
+                      >
+                        <StarOff size={16} />
+                      </button>
+                    {:else}
+                      <button
+                        class="stea-icon-btn stea-icon-btn-sm"
+                        type="button"
+                        aria-label={`Re-add ${item.ticker} to watchlist`}
+                        title="Re-add to watchlist"
+                        on:click={() => addToWatchlist(item.ticker)}
+                      >
+                        <Star size={16} />
+                      </button>
+                    {/if}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
       {/if}
     </section>
   {:else if activeTab === 'history'}
@@ -582,8 +1373,34 @@
         {#each entries as entry}
           <article class="stea-panel-grid">
             <div class="stea-row-between">
-              <strong>{entry.ticker}</strong>
-              <span class={entry.op === 'buy' ? 'stea-badge stea-badge-buy' : 'stea-badge stea-badge-sell'}>{entry.op}</span>
+              <button class="stea-ticker-trigger" type="button" on:click={() => handleTickerProfileTap(entry.ticker)}>
+                {entry.ticker}
+              </button>
+              <div class="stea-row">
+                <button
+                  class="stea-icon-btn stea-icon-btn-sm"
+                  type="button"
+                  aria-label={`Edit ${entry.ticker} entry`}
+                  title="Edit entry"
+                  on:click={() => openEditEntry(entry)}
+                >
+                  <Pencil size={16} />
+                </button>
+                <button
+                  class="stea-icon-btn stea-icon-btn-sm"
+                  type="button"
+                  aria-label={watchlistActionLabel(entry.ticker)}
+                  title={watchlistActionLabel(entry.ticker)}
+                  on:click={() => toggleWatchlist(entry.ticker)}
+                >
+                  {#if activeWatchlistTickers.includes(entry.ticker)}
+                    <StarOff size={16} />
+                  {:else}
+                    <Star size={16} />
+                  {/if}
+                </button>
+                <span class={entry.op === 'buy' ? 'stea-badge stea-badge-buy' : 'stea-badge stea-badge-sell'}>{entry.op}</span>
+              </div>
             </div>
             <p class="stea-note">{new Date(entry.occurred_at).toLocaleString()}</p>
             <dl class="stea-stat-grid">

@@ -1,8 +1,8 @@
 use axum::{
     Json, Router,
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::HeaderMap,
-    routing::get,
+    routing::{get, post, put},
 };
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde::Deserialize;
@@ -11,9 +11,11 @@ use uuid::Uuid;
 use crate::{
     error::AppError,
     models::{
-        CreateInvestlogEntry, InvestlogAsset, InvestlogEntry, InvestlogPerformance,
+        AddWatchlistItem, CreateInvestlogEntry, CreateInvestlogTickerNote, InvestlogAsset,
+        InvestlogAssets, InvestlogAssetsSummary, InvestlogEntry, InvestlogPerformance,
         InvestlogPerformanceEvent, InvestlogPerformancePoint, InvestlogPerformanceSeries,
-        PricePoint,
+        InvestlogReportEvent, InvestlogTickerNote, InvestlogWatchlistItem, PricePoint,
+        UpdateInvestlogEntry, WatchlistRemoval,
     },
     state::AppState,
 };
@@ -21,7 +23,17 @@ use crate::{
 pub fn investlog_routes() -> Router<AppState> {
     Router::new()
         .route("/investlog", get(list_entries).post(create_entry))
+        .route("/investlog/{id}", put(update_entry))
         .route("/investlog/assets", get(list_assets))
+        .route(
+            "/investlog/watchlist",
+            get(list_watchlist).post(add_watchlist_item),
+        )
+        .route(
+            "/investlog/watchlist/{ticker}/remove",
+            post(remove_watchlist_item),
+        )
+        .route("/investlog/notes", post(create_ticker_note))
         .route("/investlog/performance", get(performance))
 }
 
@@ -139,11 +151,86 @@ async fn create_entry(
     Ok(Json(row.into()))
 }
 
+async fn update_entry(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateInvestlogEntry>,
+) -> Result<Json<InvestlogEntry>, AppError> {
+    let user_id = current_user_id(&state, &headers).await?;
+    validate_entry(&payload)?;
+
+    let ticker = payload.ticker.trim().to_uppercase();
+    let notes = payload.notes.trim();
+
+    let row = sqlx::query_as::<_, InvestlogRow>(
+        r#"
+        update investlog
+        set ticker = $3,
+            occurred_at = $4,
+            op = $5::investlog_op,
+            broker = $6::investlog_broker,
+            currency = $7::investlog_currency,
+            price = $8,
+            quantity = $9,
+            fees = $10,
+            notes = $11,
+            updated_at = now()
+        where user_id = $1
+          and id = $2
+        returning
+          id,
+          ticker,
+          occurred_at,
+          op::text as op,
+          broker::text as broker,
+          currency::text as currency,
+          price,
+          quantity,
+          fees,
+          notes,
+          created_at,
+          updated_at
+        "#,
+    )
+    .bind(user_id)
+    .bind(id)
+    .bind(ticker)
+    .bind(payload.occurred_at)
+    .bind(payload.op.as_str())
+    .bind(payload.broker.as_str())
+    .bind(payload.currency.as_str())
+    .bind(payload.price)
+    .bind(payload.quantity)
+    .bind(payload.fees)
+    .bind(notes)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("investlog entry not found".to_string()))?;
+
+    Ok(Json(row.into()))
+}
+
 async fn list_assets(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<Json<Vec<InvestlogAsset>>, AppError> {
+) -> Result<Json<InvestlogAssets>, AppError> {
     let user_id = current_user_id(&state, &headers).await?;
+    let summary_row = sqlx::query_as::<_, AssetSummaryRow>(
+        r#"
+        select
+          coalesce(sum(((price * quantity + 50) / 100)) filter (where op = 'buy'), 0)::bigint as total_buys,
+          coalesce(sum(((price * quantity + 50) / 100)) filter (where op = 'sell'), 0)::bigint as total_sells,
+          coalesce(sum(fees), 0)::bigint as total_commissions,
+          coalesce(sum(fees) filter (where op = 'buy'), 0)::bigint as buy_commissions,
+          coalesce(sum(fees) filter (where op = 'sell'), 0)::bigint as sell_commissions
+        from investlog
+        where user_id = $1
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(&state.db)
+    .await?;
 
     let rows = sqlx::query_as::<_, AssetRow>(
         r#"
@@ -167,6 +254,8 @@ async fn list_assets(
 
     let mut assets = Vec::with_capacity(rows.len());
     let today = Utc::now().date_naive();
+    let mut current_open_value = 0;
+    let mut open_cost_basis = 0;
 
     for row in rows {
         let cached_price = cached_or_refreshed_price(&state, &row.ticker).await?;
@@ -174,6 +263,8 @@ async fn list_assets(
         let price_change = cached_price.price - avg_buy_price;
         let cost = rounded_div(avg_buy_price * row.quantity, 100);
         let current_value = rounded_div(cached_price.price * row.quantity, 100);
+        open_cost_basis += cost;
+        current_open_value += current_value;
         let amount_change = current_value - cost;
         let buy_span_days = row
             .last_buy_date
@@ -202,7 +293,403 @@ async fn list_assets(
         });
     }
 
-    Ok(Json(assets))
+    let total_buy_cost_basis = summary_row.total_buys + summary_row.buy_commissions;
+    let closed_cost_basis = (total_buy_cost_basis - open_cost_basis).max(0);
+    let realized_profit =
+        summary_row.total_sells - summary_row.sell_commissions - closed_cost_basis;
+    let unrealized_profit = current_open_value - open_cost_basis;
+    let summary = InvestlogAssetsSummary {
+        total_buys: summary_row.total_buys,
+        total_sells: summary_row.total_sells,
+        total_commissions: summary_row.total_commissions,
+        realized_profit,
+        unrealized_profit,
+        net_profit: realized_profit + unrealized_profit,
+    };
+
+    Ok(Json(InvestlogAssets { summary, assets }))
+}
+
+async fn list_watchlist(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<InvestlogWatchlistItem>>, AppError> {
+    let user_id = current_user_id(&state, &headers).await?;
+    refresh_watchlist_cache(&state, user_id).await?;
+
+    let mut rows = sqlx::query_as::<_, WatchlistRow>(
+        r#"
+        select
+          id,
+          ticker,
+          company_name,
+          description,
+          market_cap,
+          shares_outstanding,
+          revenue,
+          total_debt,
+          cash,
+          free_cash_flow,
+          current_price,
+          currency,
+          removed_at is null as is_active,
+          removed_at,
+          meta_fetched_at,
+          price_fetched_at,
+          created_at,
+          updated_at
+        from investlog_watchlist
+        where user_id = $1
+        order by removed_at is not null, updated_at desc, ticker
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    attach_ticker_notes(&state, user_id, &mut rows).await?;
+    Ok(Json(rows.into_iter().map(Into::into).collect()))
+}
+
+async fn refresh_watchlist_cache(state: &AppState, user_id: Uuid) -> Result<(), AppError> {
+    let rows = sqlx::query_as::<_, WatchlistCacheRow>(
+        r#"
+        select ticker, shares_outstanding, meta_fetched_at, price_fetched_at
+        from investlog_watchlist
+        where user_id = $1
+          and removed_at is null
+        order by updated_at desc
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    let now = Utc::now();
+    for row in rows {
+        let meta_stale = row
+            .meta_fetched_at
+            .map(|fetched_at| now - fetched_at > Duration::hours(24))
+            .unwrap_or(true);
+        let price_stale = row
+            .price_fetched_at
+            .map(|fetched_at| now - fetched_at > Duration::minutes(10))
+            .unwrap_or(true);
+
+        if meta_stale {
+            match state
+                .edgar
+                .company_profile_summary(&crate::integrations::edgar::EdgarTickerCompany {
+                    ticker: row.ticker.clone(),
+                    name: row.ticker.clone(),
+                })
+                .await
+            {
+                Ok(profile) => {
+                    sqlx::query(
+                        r#"
+                        update investlog_watchlist
+                        set company_name = $3,
+                            description = $4,
+                            meta_fetched_at = now(),
+                            updated_at = now()
+                        where user_id = $1
+                          and ticker = $2
+                        "#,
+                    )
+                    .bind(user_id)
+                    .bind(&row.ticker)
+                    .bind(profile.name)
+                    .bind(profile.sic_description)
+                    .execute(&state.db)
+                    .await?;
+                }
+                Err(err @ AppError::RateLimited { .. }) => return Err(err),
+                Err(err) => {
+                    tracing::debug!(
+                        ticker = %row.ticker,
+                        error = %err,
+                        "watchlist metadata refresh failed"
+                    );
+                }
+            }
+        }
+
+        if price_stale {
+            match state.market_data.latest_price_cents(&row.ticker).await {
+                Ok(price) => {
+                    let should_refresh_financials = meta_stale || row.shares_outstanding.is_none();
+                    let financials = if should_refresh_financials {
+                        match state.edgar.financial_snapshot(&row.ticker).await {
+                            Ok(value) => Some(value),
+                            Err(AppError::RateLimited { .. }) => None,
+                            Err(err) => {
+                                tracing::debug!(
+                                    ticker = %row.ticker,
+                                    error = %err,
+                                    "watchlist financial snapshot refresh failed"
+                                );
+                                None
+                            }
+                        }
+                    } else {
+                        None
+                    };
+                    let shares_outstanding = financials
+                        .as_ref()
+                        .and_then(|snapshot| snapshot.shares_outstanding);
+                    let market_cap = shares_outstanding.map(|shares| {
+                        ((shares as i128 * price as i128).min(i64::MAX as i128)) as i64
+                    });
+
+                    sqlx::query(
+                        r#"
+                        update investlog_watchlist
+                        set current_price = $3,
+                            market_cap = coalesce($4, market_cap),
+                            shares_outstanding = coalesce($5, shares_outstanding),
+                            revenue = coalesce($6, revenue),
+                            total_debt = coalesce($7, total_debt),
+                            cash = coalesce($8, cash),
+                            free_cash_flow = coalesce($9, free_cash_flow),
+                            currency = 'USD',
+                            price_fetched_at = now(),
+                            updated_at = now()
+                        where user_id = $1
+                          and ticker = $2
+                        "#,
+                    )
+                    .bind(user_id)
+                    .bind(&row.ticker)
+                    .bind(price)
+                    .bind(market_cap)
+                    .bind(shares_outstanding)
+                    .bind(financials.as_ref().and_then(|snapshot| snapshot.revenue))
+                    .bind(financials.as_ref().and_then(|snapshot| snapshot.total_debt))
+                    .bind(financials.as_ref().and_then(|snapshot| snapshot.cash))
+                    .bind(
+                        financials
+                            .as_ref()
+                            .and_then(|snapshot| snapshot.free_cash_flow),
+                    )
+                    .execute(&state.db)
+                    .await?;
+                }
+                Err(err @ AppError::RateLimited { .. }) => return Err(err),
+                Err(err) => {
+                    tracing::debug!(
+                        ticker = %row.ticker,
+                        error = %err,
+                        "watchlist price refresh failed"
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn insert_ticker_note(
+    state: &AppState,
+    user_id: Uuid,
+    ticker: &str,
+    note: &str,
+) -> Result<InvestlogTickerNote, AppError> {
+    let row = sqlx::query_as::<_, TickerNoteRow>(
+        r#"
+        insert into investlog_ticker_notes (
+          user_id,
+          ticker,
+          note
+        )
+        values ($1, $2, $3)
+        returning id, ticker, note, created_at
+        "#,
+    )
+    .bind(user_id)
+    .bind(ticker)
+    .bind(note)
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(row.into())
+}
+
+async fn ticker_notes(
+    state: &AppState,
+    user_id: Uuid,
+    tickers: &[String],
+) -> Result<Vec<TickerNoteRow>, AppError> {
+    if tickers.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let notes = sqlx::query_as::<_, TickerNoteRow>(
+        r#"
+        select id, ticker, note, created_at
+        from investlog_ticker_notes
+        where user_id = $1
+          and ticker = any($2)
+        order by created_at desc
+        "#,
+    )
+    .bind(user_id)
+    .bind(tickers)
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(notes)
+}
+
+async fn attach_ticker_notes(
+    state: &AppState,
+    user_id: Uuid,
+    rows: &mut [WatchlistRow],
+) -> Result<(), AppError> {
+    let tickers = rows
+        .iter()
+        .map(|row| row.ticker.clone())
+        .collect::<Vec<_>>();
+    let notes = ticker_notes(state, user_id, &tickers).await?;
+
+    for row in rows {
+        row.notes = notes
+            .iter()
+            .filter(|note| note.ticker == row.ticker)
+            .cloned()
+            .collect();
+    }
+
+    Ok(())
+}
+
+async fn add_watchlist_item(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<AddWatchlistItem>,
+) -> Result<Json<InvestlogWatchlistItem>, AppError> {
+    let user_id = current_user_id(&state, &headers).await?;
+    let (ticker, note) = parse_watchlist_note(&payload)?;
+
+    let row = sqlx::query_as::<_, WatchlistRow>(
+        r#"
+        insert into investlog_watchlist (
+          user_id,
+          ticker,
+          removed_at,
+          updated_at
+        )
+        values ($1, $2, null, now())
+        on conflict (user_id, ticker) do update
+        set removed_at = null,
+            updated_at = now()
+        returning
+          id,
+          ticker,
+          company_name,
+          description,
+          market_cap,
+          shares_outstanding,
+          revenue,
+          total_debt,
+          cash,
+          free_cash_flow,
+          current_price,
+          currency,
+          removed_at is null as is_active,
+          removed_at,
+          meta_fetched_at,
+          price_fetched_at,
+          created_at,
+          updated_at
+        "#,
+    )
+    .bind(user_id)
+    .bind(&ticker)
+    .fetch_one(&state.db)
+    .await?;
+
+    let note = format!("star: {note}");
+    insert_ticker_note(&state, user_id, &ticker, &note).await?;
+    let mut rows = vec![row];
+    attach_ticker_notes(&state, user_id, &mut rows).await?;
+    let row = rows
+        .into_iter()
+        .next()
+        .expect("watchlist row should exist after insert");
+
+    Ok(Json(row.into()))
+}
+
+async fn remove_watchlist_item(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(ticker): Path<String>,
+    Json(payload): Json<WatchlistRemoval>,
+) -> Result<Json<InvestlogWatchlistItem>, AppError> {
+    let user_id = current_user_id(&state, &headers).await?;
+    let ticker = normalize_ticker(&ticker)?;
+    let note = validate_note(&payload.note)?;
+
+    let row = sqlx::query_as::<_, WatchlistRow>(
+        r#"
+        update investlog_watchlist
+        set removed_at = now(),
+            updated_at = now()
+        where user_id = $1
+          and ticker = $2
+          and removed_at is null
+        returning
+          id,
+          ticker,
+          company_name,
+          description,
+          market_cap,
+          shares_outstanding,
+          revenue,
+          total_debt,
+          cash,
+          free_cash_flow,
+          current_price,
+          currency,
+          removed_at is null as is_active,
+          removed_at,
+          meta_fetched_at,
+          price_fetched_at,
+          created_at,
+          updated_at
+        "#,
+    )
+    .bind(user_id)
+    .bind(ticker.clone())
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("{ticker} is not active in watchlist")))?;
+
+    let note = format!("unstar: {note}");
+    insert_ticker_note(&state, user_id, &ticker, &note).await?;
+    let mut rows = vec![row];
+    attach_ticker_notes(&state, user_id, &mut rows).await?;
+    let row = rows
+        .into_iter()
+        .next()
+        .expect("watchlist row should exist after update");
+
+    Ok(Json(row.into()))
+}
+
+async fn create_ticker_note(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateInvestlogTickerNote>,
+) -> Result<Json<InvestlogTickerNote>, AppError> {
+    let user_id = current_user_id(&state, &headers).await?;
+    let ticker = normalize_ticker(&payload.ticker)?;
+    let note = validate_note(&payload.note)?;
+    let note = insert_ticker_note(&state, user_id, &ticker, &note).await?;
+
+    Ok(Json(note))
 }
 
 async fn performance(
@@ -268,13 +755,48 @@ async fn performance(
     .into_iter()
     .map(Into::into)
     .collect();
+    let report_events = performance_report_events(&state, &tickers, start_date).await;
+    let ticker_notes = ticker_notes(&state, user_id, &tickers)
+        .await?
+        .into_iter()
+        .map(Into::into)
+        .collect();
 
     Ok(Json(InvestlogPerformance {
         tickers,
         range: range.label.to_string(),
         series,
         events,
+        report_events,
+        ticker_notes,
     }))
+}
+
+async fn performance_report_events(
+    state: &AppState,
+    tickers: &[String],
+    start_date: NaiveDate,
+) -> Vec<InvestlogReportEvent> {
+    let mut events = Vec::new();
+
+    for ticker in tickers {
+        if let Ok(mut ticker_events) = state.edgar.report_events(ticker, start_date).await {
+            events.extend(ticker_events.drain(..).map(|event| InvestlogReportEvent {
+                ticker: event.ticker,
+                date: event.date,
+                form: event.form,
+                filing_date: event.filing_date,
+            }));
+        }
+    }
+
+    events.sort_by(|left, right| {
+        left.date
+            .cmp(&right.date)
+            .then_with(|| left.ticker.cmp(&right.ticker))
+            .then_with(|| left.form.cmp(&right.form))
+    });
+    events
 }
 
 async fn cached_or_refreshed_price(
@@ -495,6 +1017,31 @@ fn validate_entry(entry: &CreateInvestlogEntry) -> Result<(), AppError> {
     Ok(())
 }
 
+fn parse_watchlist_note(payload: &AddWatchlistItem) -> Result<(String, String), AppError> {
+    Ok((
+        normalize_ticker(&payload.ticker)?,
+        validate_note(&payload.note)?,
+    ))
+}
+
+fn normalize_ticker(value: &str) -> Result<String, AppError> {
+    let ticker = value.trim().replace('.', "-").to_uppercase();
+    if ticker.is_empty() {
+        return Err(AppError::BadRequest("ticker is required".to_string()));
+    }
+
+    Ok(ticker)
+}
+
+fn validate_note(value: &str) -> Result<String, AppError> {
+    let note = value.trim().to_string();
+    if note.is_empty() {
+        return Err(AppError::BadRequest("note is required".to_string()));
+    }
+
+    Ok(note)
+}
+
 #[derive(sqlx::FromRow)]
 struct InvestlogRow {
     id: Uuid,
@@ -519,6 +1066,55 @@ struct AssetRow {
     buy_quantity: i64,
     first_buy_date: NaiveDate,
     last_buy_date: NaiveDate,
+}
+
+#[derive(sqlx::FromRow)]
+struct AssetSummaryRow {
+    total_buys: i64,
+    total_sells: i64,
+    total_commissions: i64,
+    buy_commissions: i64,
+    sell_commissions: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct WatchlistRow {
+    id: Uuid,
+    ticker: String,
+    company_name: Option<String>,
+    description: Option<String>,
+    market_cap: Option<i64>,
+    shares_outstanding: Option<i64>,
+    revenue: Option<i64>,
+    total_debt: Option<i64>,
+    cash: Option<i64>,
+    free_cash_flow: Option<i64>,
+    current_price: Option<i64>,
+    currency: Option<String>,
+    is_active: bool,
+    removed_at: Option<DateTime<Utc>>,
+    meta_fetched_at: Option<DateTime<Utc>>,
+    price_fetched_at: Option<DateTime<Utc>>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    #[sqlx(skip)]
+    notes: Vec<TickerNoteRow>,
+}
+
+#[derive(Clone, sqlx::FromRow)]
+struct TickerNoteRow {
+    id: Uuid,
+    ticker: String,
+    note: String,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(sqlx::FromRow)]
+struct WatchlistCacheRow {
+    ticker: String,
+    shares_outstanding: Option<i64>,
+    meta_fetched_at: Option<DateTime<Utc>>,
+    price_fetched_at: Option<DateTime<Utc>>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -649,6 +1245,43 @@ impl From<InvestlogRow> for InvestlogEntry {
             notes: row.notes,
             created_at: row.created_at,
             updated_at: row.updated_at,
+        }
+    }
+}
+
+impl From<WatchlistRow> for InvestlogWatchlistItem {
+    fn from(row: WatchlistRow) -> Self {
+        Self {
+            id: row.id,
+            ticker: row.ticker,
+            company_name: row.company_name,
+            description: row.description,
+            market_cap: row.market_cap,
+            shares_outstanding: row.shares_outstanding,
+            revenue: row.revenue,
+            total_debt: row.total_debt,
+            cash: row.cash,
+            free_cash_flow: row.free_cash_flow,
+            current_price: row.current_price,
+            currency: row.currency,
+            notes: row.notes.into_iter().map(Into::into).collect(),
+            is_active: row.is_active,
+            removed_at: row.removed_at,
+            meta_fetched_at: row.meta_fetched_at,
+            price_fetched_at: row.price_fetched_at,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }
+    }
+}
+
+impl From<TickerNoteRow> for InvestlogTickerNote {
+    fn from(row: TickerNoteRow) -> Self {
+        Self {
+            id: row.id,
+            ticker: row.ticker,
+            note: row.note,
+            created_at: row.created_at,
         }
     }
 }

@@ -31,6 +31,7 @@ SUPABASE_JWT_ISSUER=https://your-project.supabase.co/auth/v1
 SUPABASE_JWT_AUDIENCE=authenticated
 SUPABASE_JWT_JWKS_URL=https://your-project.supabase.co/auth/v1/.well-known/jwks.json
 STRAWTEA_TWELVE_API_KEY=replace-me
+STRAWTEA_SEC_USER_AGENT=strawtea/0.1 your-email@example.com
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=replace-me
 VITE_API_BASE_URL=

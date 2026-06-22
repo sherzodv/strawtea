@@ -1,6 +1,8 @@
 pub mod health;
 pub mod investlog;
+pub mod jobs;
 pub mod me;
+pub mod screener;
 pub mod settings;
 pub mod spends;
 pub mod stocks;

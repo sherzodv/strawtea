@@ -24,10 +24,14 @@ use crate::{
     auth::SupabaseAuth,
     config::Config,
     db::connect_db,
-    integrations::market_data::TwelveDataClient,
+    integrations::{
+        edgar::EdgarClient, market_data::TwelveDataClient, openai::OpenAiClient,
+        throttle::ProviderThrottle,
+    },
     routes::{
-        health::health_routes, investlog::investlog_routes, me::me_routes,
-        settings::settings_routes, spends::spends_routes, stocks::stock_routes,
+        health::health_routes, investlog::investlog_routes, jobs::job_routes, me::me_routes,
+        screener::screener_routes, settings::settings_routes, spends::spends_routes,
+        stocks::stock_routes,
     },
     state::AppState,
 };
@@ -51,13 +55,24 @@ async fn main() -> anyhow::Result<()> {
         config.supabase_jwt_jwks_url.clone(),
     )
     .await?;
-    let market_data = TwelveDataClient::new(config.twelve_data_api_key.clone());
+    let throttle = ProviderThrottle::new(db.clone());
+    let market_data = TwelveDataClient::new(config.twelve_data_api_key.clone(), throttle.clone());
+    let edgar = EdgarClient::new(config.sec_user_agent.clone(), throttle.clone())?;
+    let openai = config
+        .openai_api_key
+        .clone()
+        .map(|api_key| OpenAiClient::new(api_key, config.openai_model.clone()))
+        .transpose()?;
 
     let state = AppState {
         db,
         auth,
         market_data,
+        edgar,
+        openai,
     };
+
+    routes::screener::start_screener_supervisor(state.clone());
 
     let static_dir = env::var("STATIC_DIR").unwrap_or_else(|_| "public".to_string());
     let static_files = ServeDir::new(&static_dir)
@@ -69,6 +84,8 @@ async fn main() -> anyhow::Result<()> {
             "/api",
             me_routes()
                 .merge(stock_routes())
+                .merge(screener_routes())
+                .merge(job_routes())
                 .merge(investlog_routes())
                 .merge(settings_routes())
                 .merge(spends_routes()),

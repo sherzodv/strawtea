@@ -11,6 +11,7 @@ use crate::{error::AppError, models::PriceHistory, state::AppState};
 pub fn stock_routes() -> Router<AppState> {
     Router::new()
         .route("/stocks/search", get(search))
+        .route("/stocks/{ticker}/profile", get(profile))
         .route("/stocks/{ticker}/prices", get(prices))
 }
 
@@ -65,4 +66,14 @@ async fn prices(
         range,
         prices,
     }))
+}
+
+async fn profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(ticker): Path<String>,
+) -> Result<Json<crate::models::CompanyProfile>, AppError> {
+    state.auth.user_from_headers(&headers)?;
+
+    Ok(Json(state.edgar.company_profile(&ticker).await?))
 }

@@ -61,8 +61,8 @@
     </header>
 
     {#if isAccountModalOpen}
-      <div class="stea-modal-backdrop">
-        <div class="stea-account-modal" role="dialog" aria-modal="true" aria-labelledby="account-modal-title" tabindex="-1">
+      <div class="stea-modal-backdrop" role="presentation" on:pointerdown={() => (isAccountModalOpen = false)}>
+        <div class="stea-account-modal" role="dialog" aria-modal="true" aria-labelledby="account-modal-title" tabindex="-1" on:pointerdown|stopPropagation>
           <div class="stea-modal-header">
             <div>
               <p class="stea-eyebrow">Strawtea</p>
