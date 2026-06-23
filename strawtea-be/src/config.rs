@@ -12,6 +12,8 @@ pub struct Config {
     pub sec_user_agent: String,
     pub openai_api_key: Option<String>,
     pub openai_model: String,
+    pub vapid_private_key: Option<String>,
+    pub vapid_subject: Option<String>,
     pub http_addr: String,
 }
 
@@ -31,6 +33,10 @@ impl Config {
             openai_api_key: env::var("STRAWTEA_OPENAI_API_KEY").ok(),
             openai_model: env::var("STRAWTEA_OPENAI_MODEL")
                 .unwrap_or_else(|_| "gpt-5.2".to_string()),
+            vapid_private_key: env::var("STRAWTEA_VAPID_PRIVATE_KEY")
+                .ok()
+                .map(|value| value.replace("\\n", "\n")),
+            vapid_subject: env::var("STRAWTEA_VAPID_SUBJECT").ok(),
             http_addr: env::var("HTTP_ADDR")
                 .or_else(|_| env::var("PORT").map(|port| format!("0.0.0.0:{port}")))
                 .unwrap_or_else(|_| "127.0.0.1:8080".to_string()),

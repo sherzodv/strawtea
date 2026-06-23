@@ -26,12 +26,12 @@ use crate::{
     db::connect_db,
     integrations::{
         edgar::EdgarClient, market_data::TwelveDataClient, openai::OpenAiClient,
-        throttle::ProviderThrottle,
+        push::PushNotifications, throttle::ProviderThrottle,
     },
     routes::{
         health::health_routes, investlog::investlog_routes, jobs::job_routes, me::me_routes,
-        screener::screener_routes, settings::settings_routes, spends::spends_routes,
-        stocks::stock_routes,
+        notifications::notification_routes, screener::screener_routes, settings::settings_routes,
+        spends::spends_routes, stocks::stock_routes,
     },
     state::AppState,
 };
@@ -63,6 +63,12 @@ async fn main() -> anyhow::Result<()> {
         .clone()
         .map(|api_key| OpenAiClient::new(api_key, config.openai_model.clone()))
         .transpose()?;
+    let push = config
+        .vapid_private_key
+        .clone()
+        .zip(config.vapid_subject.clone())
+        .map(|(private_key, subject)| PushNotifications::new(private_key, subject))
+        .transpose()?;
 
     let state = AppState {
         db,
@@ -70,9 +76,11 @@ async fn main() -> anyhow::Result<()> {
         market_data,
         edgar,
         openai,
+        push,
     };
 
     routes::screener::start_screener_supervisor(state.clone());
+    routes::notifications::start_price_notification_supervisor(state.clone());
 
     let static_dir = env::var("STATIC_DIR").unwrap_or_else(|_| "public".to_string());
     let static_files = ServeDir::new(&static_dir)
@@ -87,6 +95,7 @@ async fn main() -> anyhow::Result<()> {
                 .merge(screener_routes())
                 .merge(job_routes())
                 .merge(investlog_routes())
+                .merge(notification_routes())
                 .merge(settings_routes())
                 .merge(spends_routes()),
         )

@@ -437,6 +437,27 @@ a {
   gap: 10px;
 }
 
+.stea-notification-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid #ded5c6;
+  border-radius: 8px;
+  background: #fffaf1;
+}
+
+.stea-notification-row p {
+  margin: 0;
+}
+
+.stea-notification-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .stea-field-label {
   color: #5f574d;
   font-size: 0.86rem;
@@ -1208,6 +1229,8 @@ a {
 
   .stea-row-between,
   .stea-modal-actions,
+  .stea-notification-row,
+  .stea-notification-actions,
   .stea-toolbar {
     align-items: stretch;
     flex-direction: column;

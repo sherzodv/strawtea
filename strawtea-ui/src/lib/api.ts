@@ -276,6 +276,28 @@ export type SettingResponse<T> = {
   value: T | null;
 };
 
+export type PushKeyResponse = {
+  enabled: boolean;
+  public_key: string | null;
+};
+
+export type PushSubscriptionPayload = {
+  endpoint: string;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+};
+
+export type PushSubscriptionResponse = {
+  id: string;
+};
+
+export type TestNotificationResponse = {
+  sent_count: number;
+  failed_count: number;
+};
+
 export type CreateInvestlogEntry = {
   ticker: string;
   occurred_at: string;
@@ -535,6 +557,25 @@ export async function putSettingValue<T>(
   );
 
   return response.value;
+}
+
+export async function fetchPushPublicKey(): Promise<PushKeyResponse> {
+  return apiFetch('/api/notifications/push-key');
+}
+
+export async function savePushSubscription(
+  payload: PushSubscriptionPayload
+): Promise<PushSubscriptionResponse> {
+  return apiFetch('/api/notifications/push-subscriptions', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function sendTestNotification(): Promise<TestNotificationResponse> {
+  return apiFetch('/api/notifications/test', {
+    method: 'POST'
+  });
 }
 
 export async function previewRawtxImport(file: File): Promise<RawtxImportPreview> {

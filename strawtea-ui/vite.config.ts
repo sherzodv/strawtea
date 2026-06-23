@@ -41,6 +41,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
+        importScripts: ['push-listeners.js'],
         navigateFallback: '/index.html'
       }
     })

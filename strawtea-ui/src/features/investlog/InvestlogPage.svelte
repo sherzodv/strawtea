@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { BookOpen, ExternalLink, MessageSquare, Pencil, Plus, Star, StarOff } from '@lucide/svelte';
+  import { Bell, BookOpen, ExternalLink, MessageSquare, Pencil, Plus, Star, StarOff } from '@lucide/svelte';
   import { onDestroy, onMount } from 'svelte';
   import {
     addInvestlogWatchlistItem,
@@ -12,6 +12,7 @@
     listInvestlogWatchlist,
     removeInvestlogWatchlistItem,
     searchTickers,
+    sendTestNotification,
     updateInvestlogEntry,
     type CompanyAddress,
     type CompanyFinancialMetric,
@@ -30,6 +31,10 @@
     type InvestlogAnalysisSettings,
     type InvestlogTab
   } from '../../lib/settings';
+  import {
+    enableAssetPriceNotifications,
+    isPushNotificationSupported
+  } from '../../lib/notifications';
   import AiCorrectionsPage from '../ai-corrections/AiCorrectionsPage.svelte';
   import PerformanceChart from './PerformanceChart.svelte';
   import TickerPicker from './TickerPicker.svelte';
@@ -68,6 +73,11 @@
   let analysisInterval: AnalysisIntervalSetting | null = null;
   let performance: InvestlogPerformance | null = null;
   let activeTab: InvestlogTab = 'assets';
+  let isEnablingNotifications = false;
+  let isSendingTestNotification = false;
+  let notificationSupported = false;
+  let notificationPermission: NotificationPermission | 'unsupported' = 'default';
+  let notificationMessage = '';
   let profileRequestId = 0;
   const profileTapTimers = new Map<string, number>();
   const doubleTapMs = 280;
@@ -107,7 +117,10 @@
   $: draftGross = draftPrice * draftQuantity;
   $: draftNet = op === 'buy' ? draftGross + draftFees : draftGross - draftFees;
 
-  onMount(loadInvestlog);
+  onMount(() => {
+    loadInvestlog();
+    refreshNotificationState();
+  });
 
   onDestroy(() => {
     profileTapTimers.forEach((timer) => window.clearTimeout(timer));
@@ -207,6 +220,54 @@
     } finally {
       isSaving = false;
     }
+  }
+
+  async function enableNotifications() {
+    notificationMessage = '';
+    isEnablingNotifications = true;
+
+    try {
+      await enableAssetPriceNotifications();
+      notificationMessage = 'Price alerts are enabled for this device.';
+    } catch (err) {
+      notificationMessage = err instanceof Error ? err.message : 'Could not enable price alerts';
+    } finally {
+      refreshNotificationState();
+      isEnablingNotifications = false;
+    }
+  }
+
+  async function sendNotificationTest() {
+    notificationMessage = '';
+    isSendingTestNotification = true;
+
+    try {
+      const result = await sendTestNotification();
+      notificationMessage = `Sent ${result.sent_count} test notification${result.sent_count === 1 ? '' : 's'}${result.failed_count > 0 ? `, ${result.failed_count} failed` : ''}.`;
+    } catch (err) {
+      notificationMessage = err instanceof Error ? err.message : 'Could not send test notification';
+    } finally {
+      isSendingTestNotification = false;
+    }
+  }
+
+  function refreshNotificationState() {
+    notificationSupported = isPushNotificationSupported();
+    notificationPermission = notificationSupported ? Notification.permission : 'unsupported';
+  }
+
+  function notificationStatusText() {
+    if (notificationMessage) return notificationMessage;
+    if (!notificationSupported) return 'Push notifications are not available in this browser.';
+    if (notificationPermission === 'granted') return 'Price alerts are enabled for this device.';
+    if (notificationPermission === 'denied') return 'Notifications are blocked in this browser.';
+    return 'Price alerts fire at +10%, +20%, and +30%.';
+  }
+
+  function notificationButtonLabel() {
+    if (isEnablingNotifications) return 'Enabling';
+    if (notificationPermission === 'granted') return 'Refresh alerts';
+    return 'Enable alerts';
   }
 
   function toScaledInteger(value: string, scale: number, label: string, allowZero = false) {
@@ -1074,6 +1135,33 @@
       {#if isLoading}
         <p class="stea-muted">Loading assets</p>
       {:else}
+        <div class="stea-notification-row">
+          <div>
+            <p class="stea-eyebrow">Price alerts</p>
+            <p class="stea-muted">{notificationStatusText()}</p>
+          </div>
+          <div class="stea-notification-actions">
+            <button
+              class="stea-btn-secondary stea-btn-fit"
+              type="button"
+              disabled={!notificationSupported || notificationPermission === 'denied' || isEnablingNotifications}
+              on:click={enableNotifications}
+            >
+              <Bell size={18} />
+              {notificationButtonLabel()}
+            </button>
+            <button
+              class="stea-btn-secondary stea-btn-fit"
+              type="button"
+              disabled={!notificationSupported || notificationPermission !== 'granted' || isSendingTestNotification}
+              on:click={sendNotificationTest}
+            >
+              <Bell size={18} />
+              {isSendingTestNotification ? 'Sending' : 'Test'}
+            </button>
+          </div>
+        </div>
+
         {#if assetsSummary}
           <dl class="stea-stat-grid stea-stat-strip stea-assets-summary">
             <div>
