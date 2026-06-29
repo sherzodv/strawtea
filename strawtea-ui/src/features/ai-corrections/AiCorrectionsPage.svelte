@@ -25,7 +25,7 @@
     'Ignore'
   ];
   const tierOptions = ['all', '1', '2', '3', 'none'];
-  const performanceRanges: InvestlogPerformanceRange[] = ['1m', '3m', '6m', '1y', '3y'];
+  const performanceRanges: InvestlogPerformanceRange[] = ['1w', '1m', '3m', '6m', '1y', '3y'];
 
   export let watchlistTickers: string[] = [];
   export let onAddToWatchlist: (ticker: string) => void | Promise<void> = () => {};

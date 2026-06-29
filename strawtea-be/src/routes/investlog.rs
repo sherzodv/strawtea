@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
@@ -14,8 +16,8 @@ use crate::{
         AddWatchlistItem, CreateInvestlogEntry, CreateInvestlogTickerNote, InvestlogAsset,
         InvestlogAssets, InvestlogAssetsSummary, InvestlogEntry, InvestlogPerformance,
         InvestlogPerformanceEvent, InvestlogPerformancePoint, InvestlogPerformanceSeries,
-        InvestlogReportEvent, InvestlogTickerNote, InvestlogWatchlistItem, PricePoint,
-        UpdateInvestlogEntry, WatchlistRemoval,
+        InvestlogRecentActivity, InvestlogReportEvent, InvestlogTickerNote, InvestlogWatchlistItem,
+        PricePoint, UpdateInvestlogEntry, WatchlistRemoval,
     },
     state::AppState,
 };
@@ -232,6 +234,25 @@ async fn list_assets(
     .fetch_one(&state.db)
     .await?;
 
+    let activity_rows = sqlx::query_as::<_, ActivityTradeRow>(
+        r#"
+        select
+          ticker,
+          occurred_at,
+          op::text as op,
+          price,
+          quantity,
+          fees
+        from investlog
+        where user_id = $1
+        order by occurred_at asc, created_at asc
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(&state.db)
+    .await?;
+    let recent_activity = calculate_recent_activity(&activity_rows, Utc::now(), 30);
+
     let rows = sqlx::query_as::<_, AssetRow>(
         r#"
         select
@@ -307,7 +328,11 @@ async fn list_assets(
         net_profit: realized_profit + unrealized_profit,
     };
 
-    Ok(Json(InvestlogAssets { summary, assets }))
+    Ok(Json(InvestlogAssets {
+        summary,
+        recent_activity,
+        assets,
+    }))
 }
 
 async fn list_watchlist(
@@ -799,6 +824,67 @@ async fn performance_report_events(
     events
 }
 
+fn calculate_recent_activity(
+    rows: &[ActivityTradeRow],
+    now: DateTime<Utc>,
+    days: i64,
+) -> InvestlogRecentActivity {
+    let since = now - Duration::days(days);
+    let mut positions: HashMap<String, ActivityPosition> = HashMap::new();
+    let mut activity = InvestlogRecentActivity {
+        days,
+        realized_profit: 0,
+        commissions: 0,
+        sell_proceeds: 0,
+        buy_spend: 0,
+        trade_count: 0,
+        sell_count: 0,
+        buy_count: 0,
+    };
+
+    for row in rows {
+        let gross = rounded_div(row.price * row.quantity, 100);
+        let is_recent = row.occurred_at >= since;
+        let position = positions.entry(row.ticker.clone()).or_default();
+
+        match row.op.as_str() {
+            "buy" => {
+                position.quantity += row.quantity;
+                position.cost_basis += gross + row.fees;
+
+                if is_recent {
+                    activity.buy_spend += gross;
+                    activity.commissions += row.fees;
+                    activity.trade_count += 1;
+                    activity.buy_count += 1;
+                }
+            }
+            "sell" => {
+                let sold_quantity = row.quantity.min(position.quantity);
+                let sold_cost_basis = if position.quantity > 0 {
+                    rounded_div(position.cost_basis * sold_quantity, position.quantity)
+                } else {
+                    0
+                };
+
+                position.quantity -= sold_quantity;
+                position.cost_basis = (position.cost_basis - sold_cost_basis).max(0);
+
+                if is_recent {
+                    activity.realized_profit += gross - row.fees - sold_cost_basis;
+                    activity.sell_proceeds += gross;
+                    activity.commissions += row.fees;
+                    activity.trade_count += 1;
+                    activity.sell_count += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    activity
+}
+
 async fn cached_or_refreshed_price(
     state: &AppState,
     ticker: &str,
@@ -1078,6 +1164,22 @@ struct AssetSummaryRow {
 }
 
 #[derive(sqlx::FromRow)]
+struct ActivityTradeRow {
+    ticker: String,
+    occurred_at: DateTime<Utc>,
+    op: String,
+    price: i64,
+    quantity: i64,
+    fees: i64,
+}
+
+#[derive(Default)]
+struct ActivityPosition {
+    quantity: i64,
+    cost_basis: i64,
+}
+
+#[derive(sqlx::FromRow)]
 struct WatchlistRow {
     id: Uuid,
     ticker: String,
@@ -1161,6 +1263,11 @@ fn f64_cents(value: f64) -> i64 {
 
 fn performance_range(value: &str) -> Result<PerformanceRange, AppError> {
     match value {
+        "1w" => Ok(PerformanceRange {
+            label: "1w",
+            days: 7,
+            output_size: 10,
+        }),
         "1m" => Ok(PerformanceRange {
             label: "1m",
             days: 31,
@@ -1187,7 +1294,7 @@ fn performance_range(value: &str) -> Result<PerformanceRange, AppError> {
             output_size: 780,
         }),
         _ => Err(AppError::BadRequest(
-            "range must be one of 1m, 3m, 6m, 1y, 3y".to_string(),
+            "range must be one of 1w, 1m, 3m, 6m, 1y, 3y".to_string(),
         )),
     }
 }

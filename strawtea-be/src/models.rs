@@ -218,6 +218,7 @@ pub struct InvestlogEntry {
 #[derive(Debug, Serialize)]
 pub struct InvestlogAssets {
     pub summary: InvestlogAssetsSummary,
+    pub recent_activity: InvestlogRecentActivity,
     pub assets: Vec<InvestlogAsset>,
 }
 
@@ -229,6 +230,18 @@ pub struct InvestlogAssetsSummary {
     pub realized_profit: i64,
     pub unrealized_profit: i64,
     pub net_profit: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct InvestlogRecentActivity {
+    pub days: i64,
+    pub realized_profit: i64,
+    pub commissions: i64,
+    pub sell_proceeds: i64,
+    pub buy_spend: i64,
+    pub trade_count: i64,
+    pub sell_count: i64,
+    pub buy_count: i64,
 }
 
 #[derive(Debug, Serialize)]

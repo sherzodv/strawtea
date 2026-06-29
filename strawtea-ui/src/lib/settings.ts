@@ -1,7 +1,7 @@
 import { getSettingValue, putSettingValue } from './api';
 import type { InvestlogPerformanceRange } from './api';
 
-export type InvestlogTab = 'assets' | 'analysis' | 'screener' | 'watchlist' | 'history';
+export type InvestlogTab = 'assets' | 'activity' | 'analysis' | 'screener' | 'watchlist' | 'history';
 
 export type AnalysisIntervalSetting = {
   anchorDate: string | null;

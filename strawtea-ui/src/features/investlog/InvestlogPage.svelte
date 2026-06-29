@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Bell, BookOpen, ExternalLink, MessageSquare, Pencil, Plus, Star, StarOff } from '@lucide/svelte';
+  import { BookOpen, ExternalLink, MessageSquare, Pencil, Plus, Star, StarOff } from '@lucide/svelte';
   import { onDestroy, onMount } from 'svelte';
   import {
     addInvestlogWatchlistItem,
@@ -12,7 +12,6 @@
     listInvestlogWatchlist,
     removeInvestlogWatchlistItem,
     searchTickers,
-    sendTestNotification,
     updateInvestlogEntry,
     type CompanyAddress,
     type CompanyFinancialMetric,
@@ -22,6 +21,7 @@
     type InvestlogEntry,
     type InvestlogPerformance,
     type InvestlogPerformanceRange,
+    type InvestlogRecentActivity,
     type InvestlogTickerNote,
     type InvestlogWatchlistItem
   } from '../../lib/api';
@@ -31,10 +31,6 @@
     type InvestlogAnalysisSettings,
     type InvestlogTab
   } from '../../lib/settings';
-  import {
-    enableAssetPriceNotifications,
-    isPushNotificationSupported
-  } from '../../lib/notifications';
   import AiCorrectionsPage from '../ai-corrections/AiCorrectionsPage.svelte';
   import PerformanceChart from './PerformanceChart.svelte';
   import TickerPicker from './TickerPicker.svelte';
@@ -48,6 +44,7 @@
   let entries: InvestlogEntry[] = [];
   let assets: InvestlogAsset[] = [];
   let assetsSummary: InvestlogAssetsSummary | null = null;
+  let recentActivity: InvestlogRecentActivity | null = null;
   let watchlist: InvestlogWatchlistItem[] = [];
   let ticker = '';
   let occurredAt = defaultLocalDateTime();
@@ -73,15 +70,11 @@
   let analysisInterval: AnalysisIntervalSetting | null = null;
   let performance: InvestlogPerformance | null = null;
   let activeTab: InvestlogTab = 'assets';
-  let isEnablingNotifications = false;
-  let isSendingTestNotification = false;
-  let notificationSupported = false;
-  let notificationPermission: NotificationPermission | 'unsupported' = 'default';
-  let notificationMessage = '';
   let profileRequestId = 0;
   const profileTapTimers = new Map<string, number>();
   const doubleTapMs = 280;
   const performanceRanges: Array<{ value: InvestlogPerformanceRange; label: string }> = [
+    { value: '1w', label: '1W' },
     { value: '1m', label: '1M' },
     { value: '3m', label: '3M' },
     { value: '6m', label: '6M' },
@@ -119,7 +112,6 @@
 
   onMount(() => {
     loadInvestlog();
-    refreshNotificationState();
   });
 
   onDestroy(() => {
@@ -158,6 +150,7 @@
       entries = loadedEntries;
       assets = loadedAssets.assets;
       assetsSummary = loadedAssets.summary;
+      recentActivity = loadedAssets.recent_activity;
       watchlist = loadedWatchlist;
 
       if (selectedAnalysisTickers.length === 0 && assets[0]) {
@@ -209,6 +202,7 @@
       const loadedAssets = await listInvestlogAssets();
       assets = loadedAssets.assets;
       assetsSummary = loadedAssets.summary;
+      recentActivity = loadedAssets.recent_activity;
       if (selectedAnalysisTickers.length === 0 && assets[0]) {
         selectedAnalysisTickers = [assets[0].ticker];
         saveAnalysisSettings();
@@ -220,54 +214,6 @@
     } finally {
       isSaving = false;
     }
-  }
-
-  async function enableNotifications() {
-    notificationMessage = '';
-    isEnablingNotifications = true;
-
-    try {
-      await enableAssetPriceNotifications();
-      notificationMessage = 'Price alerts are enabled for this device.';
-    } catch (err) {
-      notificationMessage = err instanceof Error ? err.message : 'Could not enable price alerts';
-    } finally {
-      refreshNotificationState();
-      isEnablingNotifications = false;
-    }
-  }
-
-  async function sendNotificationTest() {
-    notificationMessage = '';
-    isSendingTestNotification = true;
-
-    try {
-      const result = await sendTestNotification();
-      notificationMessage = `Sent ${result.sent_count} test notification${result.sent_count === 1 ? '' : 's'}${result.failed_count > 0 ? `, ${result.failed_count} failed` : ''}.`;
-    } catch (err) {
-      notificationMessage = err instanceof Error ? err.message : 'Could not send test notification';
-    } finally {
-      isSendingTestNotification = false;
-    }
-  }
-
-  function refreshNotificationState() {
-    notificationSupported = isPushNotificationSupported();
-    notificationPermission = notificationSupported ? Notification.permission : 'unsupported';
-  }
-
-  function notificationStatusText() {
-    if (notificationMessage) return notificationMessage;
-    if (!notificationSupported) return 'Push notifications are not available in this browser.';
-    if (notificationPermission === 'granted') return 'Price alerts are enabled for this device.';
-    if (notificationPermission === 'denied') return 'Notifications are blocked in this browser.';
-    return 'Price alerts fire at +10%, +20%, and +30%.';
-  }
-
-  function notificationButtonLabel() {
-    if (isEnablingNotifications) return 'Enabling';
-    if (notificationPermission === 'granted') return 'Refresh alerts';
-    return 'Enable alerts';
   }
 
   function toScaledInteger(value: string, scale: number, label: string, allowZero = false) {
@@ -468,6 +414,22 @@
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     })}%`;
+  }
+
+  function activityBarWidth(activity: InvestlogRecentActivity, value: number) {
+    if (value === 0) {
+      return '0%';
+    }
+
+    const reference = Math.max(
+      Math.abs(activity.realized_profit),
+      activity.commissions,
+      activity.sell_proceeds,
+      activity.buy_spend,
+      1
+    );
+
+    return `${Math.max(4, Math.round((Math.abs(value) / reference) * 100))}%`;
   }
 
   function formatDate(value: string | null) {
@@ -777,7 +739,8 @@
   }
 
   function normalizeTab(value: string): InvestlogTab {
-    return value === 'analysis' ||
+    return value === 'activity' ||
+      value === 'analysis' ||
       value === 'screener' ||
       value === 'watchlist' ||
       value === 'history'
@@ -1088,6 +1051,15 @@
       Assets
     </button>
     <button
+      class={activeTab === 'activity' ? 'stea-tab stea-tab-active' : 'stea-tab'}
+      type="button"
+      role="tab"
+      aria-selected={activeTab === 'activity'}
+      on:click={() => selectActiveTab('activity')}
+    >
+      Activity
+    </button>
+    <button
       class={activeTab === 'analysis' ? 'stea-tab stea-tab-active' : 'stea-tab'}
       type="button"
       role="tab"
@@ -1135,33 +1107,6 @@
       {#if isLoading}
         <p class="stea-muted">Loading assets</p>
       {:else}
-        <div class="stea-notification-row">
-          <div>
-            <p class="stea-eyebrow">Price alerts</p>
-            <p class="stea-muted">{notificationStatusText()}</p>
-          </div>
-          <div class="stea-notification-actions">
-            <button
-              class="stea-btn-secondary stea-btn-fit"
-              type="button"
-              disabled={!notificationSupported || notificationPermission === 'denied' || isEnablingNotifications}
-              on:click={enableNotifications}
-            >
-              <Bell size={18} />
-              {notificationButtonLabel()}
-            </button>
-            <button
-              class="stea-btn-secondary stea-btn-fit"
-              type="button"
-              disabled={!notificationSupported || notificationPermission !== 'granted' || isSendingTestNotification}
-              on:click={sendNotificationTest}
-            >
-              <Bell size={18} />
-              {isSendingTestNotification ? 'Sending' : 'Test'}
-            </button>
-          </div>
-        </div>
-
         {#if assetsSummary}
           <dl class="stea-stat-grid stea-stat-strip stea-assets-summary">
             <div>
@@ -1247,6 +1192,70 @@
           </table>
         </div>
         {/if}
+      {/if}
+    </section>
+  {:else if activeTab === 'activity'}
+    <section class="stea-stack" aria-label="Last 30 days investment activity">
+      {#if isLoading}
+        <p class="stea-muted">Loading activity</p>
+      {:else if recentActivity}
+        <section class="stea-activity-panel" aria-label="Last 30 days investment activity">
+          <div class="stea-row-between stea-activity-header">
+            <div>
+              <p class="stea-eyebrow">Last {recentActivity.days} days</p>
+              <h2 class="stea-heading-sm">Realized activity</h2>
+            </div>
+            <p class="stea-muted">
+              {recentActivity.trade_count} trades · {recentActivity.buy_count} buys · {recentActivity.sell_count} sells
+            </p>
+          </div>
+
+          <dl class="stea-stat-grid stea-activity-stats">
+            <div>
+              <dt>Realized net</dt>
+              <dd class={changeClass(recentActivity.realized_profit)}>{formatMoney(recentActivity.realized_profit)}</dd>
+            </div>
+            <div>
+              <dt>Commissions</dt>
+              <dd>{formatMoney(recentActivity.commissions)}</dd>
+            </div>
+            <div>
+              <dt>Sells</dt>
+              <dd>{formatMoney(recentActivity.sell_proceeds)}</dd>
+            </div>
+            <div>
+              <dt>Buys</dt>
+              <dd>{formatMoney(recentActivity.buy_spend)}</dd>
+            </div>
+          </dl>
+
+          {#if recentActivity.trade_count > 0}
+            <div class="stea-activity-bars" aria-label="Last 30 days realized profit and commissions">
+              <div class="stea-activity-bar-row">
+                <span>Realized net</span>
+                <div class="stea-activity-track">
+                  <span
+                    class={recentActivity.realized_profit >= 0 ? 'stea-activity-fill stea-activity-fill-gain' : 'stea-activity-fill stea-activity-fill-loss'}
+                    style={`width: ${activityBarWidth(recentActivity, recentActivity.realized_profit)}`}
+                  ></span>
+                </div>
+                <strong class={changeClass(recentActivity.realized_profit)}>{formatMoney(recentActivity.realized_profit)}</strong>
+              </div>
+              <div class="stea-activity-bar-row">
+                <span>Commissions</span>
+                <div class="stea-activity-track">
+                  <span
+                    class="stea-activity-fill stea-activity-fill-fee"
+                    style={`width: ${activityBarWidth(recentActivity, recentActivity.commissions)}`}
+                  ></span>
+                </div>
+                <strong>{formatMoney(recentActivity.commissions)}</strong>
+              </div>
+            </div>
+          {:else}
+            <p class="stea-muted">No trades in this window.</p>
+          {/if}
+        </section>
       {/if}
     </section>
   {:else if activeTab === 'analysis'}

@@ -200,8 +200,20 @@ export type InvestlogAssetsSummary = {
   net_profit: number;
 };
 
+export type InvestlogRecentActivity = {
+  days: number;
+  realized_profit: number;
+  commissions: number;
+  sell_proceeds: number;
+  buy_spend: number;
+  trade_count: number;
+  sell_count: number;
+  buy_count: number;
+};
+
 export type InvestlogAssets = {
   summary: InvestlogAssetsSummary;
+  recent_activity: InvestlogRecentActivity;
   assets: InvestlogAsset[];
 };
 
@@ -270,7 +282,7 @@ export type InvestlogPerformance = {
   ticker_notes: InvestlogTickerNote[];
 };
 
-export type InvestlogPerformanceRange = '1m' | '3m' | '6m' | '1y' | '3y';
+export type InvestlogPerformanceRange = '1w' | '1m' | '3m' | '6m' | '1y' | '3y';
 
 export type SettingResponse<T> = {
   value: T | null;

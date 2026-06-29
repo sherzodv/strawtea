@@ -437,27 +437,6 @@ a {
   gap: 10px;
 }
 
-.stea-notification-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 14px;
-  border: 1px solid #ded5c6;
-  border-radius: 8px;
-  background: #fffaf1;
-}
-
-.stea-notification-row p {
-  margin: 0;
-}
-
-.stea-notification-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 .stea-field-label {
   color: #5f574d;
   font-size: 0.86rem;
@@ -755,6 +734,73 @@ a {
 
 .stea-assets-summary {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.stea-activity-panel {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid #d8d1c4;
+  border-radius: 8px;
+  background: #fcfbf6;
+}
+
+.stea-activity-header {
+  align-items: flex-start;
+}
+
+.stea-activity-header p,
+.stea-activity-header h2 {
+  margin: 0;
+}
+
+.stea-activity-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.stea-activity-bars {
+  display: grid;
+  gap: 9px;
+}
+
+.stea-activity-bar-row {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.8fr) minmax(120px, 2fr) minmax(88px, auto);
+  align-items: center;
+  gap: 10px;
+  color: #5f574d;
+  font-size: 0.88rem;
+}
+
+.stea-activity-bar-row strong {
+  color: #25221d;
+  text-align: right;
+}
+
+.stea-activity-track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #eee6da;
+}
+
+.stea-activity-fill {
+  display: block;
+  height: 100%;
+  min-width: 4px;
+  border-radius: inherit;
+}
+
+.stea-activity-fill-gain {
+  background: #4f8f66;
+}
+
+.stea-activity-fill-loss {
+  background: #b85c4d;
+}
+
+.stea-activity-fill-fee {
+  background: #8e806d;
 }
 
 .stea-stat-grid dt {
@@ -1219,6 +1265,7 @@ a {
   .stea-form-grid,
   .stea-screener-filters,
   .stea-stat-grid,
+  .stea-activity-stats,
   .stea-profile-address-grid {
     grid-template-columns: 1fr;
   }
@@ -1229,8 +1276,6 @@ a {
 
   .stea-row-between,
   .stea-modal-actions,
-  .stea-notification-row,
-  .stea-notification-actions,
   .stea-toolbar {
     align-items: stretch;
     flex-direction: column;
@@ -1239,6 +1284,14 @@ a {
   .stea-analysis-range-row {
     align-items: flex-start;
     flex-direction: row;
+  }
+
+  .stea-activity-bar-row {
+    grid-template-columns: 1fr;
+  }
+
+  .stea-activity-bar-row strong {
+    text-align: left;
   }
 
   .stea-analysis-range-actions {
